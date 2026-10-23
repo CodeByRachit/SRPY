@@ -284,6 +284,19 @@ async def test_fastapi_streamable_http_endpoints():
         assert reset_resp.status_code == 200
         assert reset_resp.json()["status"] == "reset_successful"
 
+        # 5. Demo Runner Endpoints
+        start_demo = await client.post("/api/demo/start")
+        assert start_demo.status_code == 200
+        assert start_demo.json()["status"] == "started"
+
+        status_demo = await client.get("/api/demo/status")
+        assert status_demo.status_code == 200
+        assert status_demo.json()["isRunning"] is True
+
+        stop_demo = await client.post("/api/demo/stop")
+        assert stop_demo.status_code == 200
+        assert stop_demo.json()["status"] == "stopped"
+
 
 async def run_standalone_test_suite():
     """Runs all test routines sequentially for direct terminal execution."""
@@ -315,10 +328,10 @@ async def run_standalone_test_suite():
     await test_mcp_resources_and_prompts()
     print("  -> Passed: Resources read and prompt templates rendered.")
 
-    print("\n[7/7] Testing FastAPI Streamable HTTP & Bedrock Agent...")
+    print("\n[7/7] Testing FastAPI Streamable HTTP, Bedrock Agent & Demo Runner...")
     await test_bedrock_agent_scenarios()
     await test_fastapi_streamable_http_endpoints()
-    print("  -> Passed: Streamable HTTP SSE verified, Bedrock Converse loop verified.")
+    print("  -> Passed: Streamable HTTP SSE, Bedrock Converse loop, and Demo Runner verified.")
 
     print("\n======================================================================")
     print("ALL TESTS PASSED: AuraCare backend is 100% compliant with MCP Spec 2025-11-25!")

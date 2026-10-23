@@ -24,8 +24,11 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 from bedrock_agent import bedrock_agent
+from demo_runner import DemoRunner
 from mcp_server import MCP_SPEC_VERSION, mcp_server
 from state_store import state_store
+
+demo_runner = DemoRunner(state_store=state_store, bedrock_agent=bedrock_agent)
 
 # Configure structured logging
 logging.basicConfig(
@@ -79,6 +82,11 @@ class DirectMcpToolRequest(BaseModel):
     tool_name: str = Field(..., description="Exact MCP tool name.")
     arguments: Dict[str, Any] = Field(default_factory=dict, description="Tool execution arguments.")
     session_id: Optional[str] = Field(None, description="Optional MCP session ID.")
+
+
+class DemoRunStepRequest(BaseModel):
+    step: int = Field(..., description="Step 1, 2, 3, or 4 of the judge demo sequence.")
+
 
 
 # -----------------------------------------------------------------------------
@@ -201,20 +209,27 @@ async def health_check():
 
 @app.get("/api/state", summary="Fetch Complete Care State & Telemetry Log")
 async def get_current_state():
-    """Returns the locked care state snapshot including real-time vitals and MCP logs."""
-    return await state_store.get_state()
+    """Returns the locked care state snapshot including real-time vitals, history, and MCP logs."""
+    state = await state_store.get_state()
+    engine_name = "AWS_BEDROCK" if bedrock_agent.bedrock_client and not bedrock_agent.demo_mode else "BEDROCK_FALLBACK_ROUTER"
+    state["backend_meta"] = {
+        "mcp_spec": "2025-11-25",
+        "transport": "Streamable HTTP",
+        "engine": engine_name,
+    }
+    return state
 
 
 @app.post("/api/agent/chat", summary="Alexa+ Voice & Intent Interaction")
 async def agent_chat_endpoint(payload: AgentChatRequest):
     """
     Processes voice utterance or triggers one of the 5 flagship caregiving scenarios.
-    Executes MCP tools via in-code JSON-RPC 2.0 dispatch and streams telemetry frames.
+    Appends conversation messages, executes MCP tools, and streams telemetry and state.
     """
     if not payload.prompt.strip() and not payload.scenario_id:
         raise HTTPException(status_code=400, detail="prompt or scenario_id required")
 
-    result = await bedrock_agent.chat(
+    result = await bedrock_agent.process_turn(
         prompt=payload.prompt,
         scenario_id=payload.scenario_id,
         session_id=payload.session_id,
@@ -248,12 +263,104 @@ async def reset_care_state():
     Resets the caregiving database to the initial seed state and broadcasts
     the fresh state to all active dashboard WebSockets for instant demo resets.
     """
+    await demo_runner.stop()
     new_state = await state_store.reset_to_seed()
+    await state_store.broadcast({
+        "type": "DEMO_RESET",
+        "payload": {},
+    })
     return {
         "status": "reset_successful",
         "message": "Care state successfully restored to initial seed specification.",
         "state": new_state,
     }
+
+
+@app.post("/api/state/randomize", summary="Generate Fresh Dynamic Eldercare Scenario")
+async def randomize_care_state():
+    """Generates a fresh dynamic eldercare scenario on the backend and broadcasts to dashboards."""
+    full_state = await state_store.randomize_scenario()
+    return {
+        "status": "ok",
+        "message": "Generated fresh clinical state with randomized vitals and adherence.",
+        "state": full_state,
+    }
+
+
+@app.post("/api/demo/run-step", summary="Backend-Driven Choreographed Demo Step")
+async def run_demo_step(payload: DemoRunStepRequest):
+    """
+    Executes an exact step of the judge demo sequence entirely on the backend:
+    step == 1: Resets state to seed, executes get_today_schedule via MCP.
+    step == 2: Eleanor logs afternoon Eliquis pill -> log_medication_taken + notify_caregiver.
+    step == 3: Eleanor schedules eye exam -> add_appointment + notify_caregiver.
+    step == 4: Emergency check-in alert -> check_in_status(NO_RESPONSE) + notify_caregiver(CRITICAL).
+    """
+    step = payload.step
+    if step == 1:
+        await state_store.reset_to_seed()
+        utterance = "Alexa, what's my care schedule today?"
+        res = await bedrock_agent.process_turn(prompt=utterance, scenario_id="GET_SCHEDULE")
+        reply = res["reply"]
+        tool_calls = res["tool_calls"]
+    elif step == 2:
+        utterance = "Alexa, I just took my afternoon Eliquis pill with a glass of water"
+        res = await bedrock_agent.process_turn(prompt=utterance, scenario_id="LOG_ELIQUIS")
+        reply = res["reply"]
+        tool_calls = res["tool_calls"]
+    elif step == 3:
+        utterance = "Alexa, schedule an eye exam with Dr. Priya Patel tomorrow at 2:00 PM"
+        res = await bedrock_agent.process_turn(prompt=utterance, scenario_id="ADD_EYE_EXAM")
+        reply = res["reply"]
+        tool_calls = res["tool_calls"]
+    elif step == 4:
+        utterance = "Alexa, Eleanor did not answer her afternoon living room check-in prompt!"
+        res = await bedrock_agent.process_turn(prompt=utterance, scenario_id="UNRESPONSIVE_CHECKIN")
+        reply = res["reply"]
+        tool_calls = res["tool_calls"]
+    else:
+        raise HTTPException(status_code=400, detail="Invalid step. Must be 1, 2, 3, or 4.")
+
+    full_state = await state_store.get_state()
+    return {
+        "step": step,
+        "user_utterance": utterance,
+        "reply": reply,
+        "tool_calls": tool_calls,
+        "state": full_state,
+    }
+
+
+@app.post("/api/demo/start", summary="Start Backend Choreographed Judge Demo")
+async def start_demo_runner():
+    status = await demo_runner.start()
+    return {"status": "started", "demo": status}
+
+
+@app.post("/api/demo/stop", summary="Stop Backend Choreographed Judge Demo")
+async def stop_demo_runner():
+    status = await demo_runner.stop()
+    return {"status": "stopped", "demo": status}
+
+
+@app.get("/api/demo/status", summary="Get Backend Demo Orchestrator Status")
+async def get_demo_status():
+    return demo_runner.get_status()
+
+
+@app.post("/api/scenario/start", include_in_schema=False)
+async def start_scenario_alias():
+    return await start_demo_runner()
+
+
+@app.post("/api/scenario/stop", include_in_schema=False)
+async def stop_scenario_alias():
+    return await stop_demo_runner()
+
+
+@app.get("/api/scenario/status", include_in_schema=False)
+async def get_scenario_alias():
+    return await get_demo_status()
 
 
 # -----------------------------------------------------------------------------
@@ -265,17 +372,26 @@ async def dashboard_websocket_endpoint(websocket: WebSocket):
     """
     Full-duplex WebSocket hub connecting remote family dashboards.
     Pushes INITIAL_STATE, STATE_UPDATE, MCP_TELEMETRY, CAREGIVER_ALERT,
-    and AGENT_STATUS events in real time.
+    AGENT_STATUS, and DEMO_STATUS events in real time.
     """
     await websocket.accept()
     await state_store.register_websocket(websocket)
 
-    # Immediately push current initial state upon connection
+    # Immediately push current initial state and demo status upon connection
     initial_state = await state_store.get_state()
     await websocket.send_text(
         json.dumps({
             "type": "INITIAL_STATE",
             "payload": initial_state,
+            "data": initial_state,
+        }, ensure_ascii=False)
+    )
+    demo_status = demo_runner.get_status()
+    await websocket.send_text(
+        json.dumps({
+            "type": "DEMO_STATUS",
+            "payload": demo_status,
+            "data": demo_status,
         }, ensure_ascii=False)
     )
 

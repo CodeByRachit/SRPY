@@ -6,9 +6,9 @@ import {
   Volume2,
   VolumeX,
   Radio,
-  Cpu,
   Layers,
   Pause,
+  Dice5,
 } from 'lucide-react';
 import { CuteThemeToggle } from './CuteThemeToggle';
 
@@ -25,6 +25,7 @@ interface TopCommandBarProps {
   onStartAutoDemo: () => void;
   onPauseAutoDemo: () => void;
   onResetDemo: () => void;
+  onRandomizeScenario: () => void;
 }
 
 export const TopCommandBar: React.FC<TopCommandBarProps> = ({
@@ -40,6 +41,7 @@ export const TopCommandBar: React.FC<TopCommandBarProps> = ({
   onStartAutoDemo,
   onPauseAutoDemo,
   onResetDemo,
+  onRandomizeScenario,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full bg-white/80 dark:bg-[#080d19]/80 border-b border-slate-200/90 dark:border-slate-800/90 backdrop-blur-xl px-4 py-2.5 shadow-sm transition-colors duration-400">
@@ -69,21 +71,21 @@ export const TopCommandBar: React.FC<TopCommandBarProps> = ({
 
         {/* Status & Architecture Badges */}
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {/* Connection Status: LIVE BACKEND vs AUTONOMOUS CLIENT */}
+          {/* Connection Status: LIVE BACKEND WS :8000 */}
           <div
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono transition-colors ${
               isLiveBackend
                 ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-300 dark:border-emerald-500/50 text-emerald-800 dark:text-emerald-300'
-                : 'bg-cyan-50 dark:bg-cyan-950/70 border-cyan-300 dark:border-cyan-500/50 text-cyan-800 dark:text-cyan-300'
+                : 'bg-amber-50 dark:bg-amber-950/70 border-amber-300 dark:border-amber-500/50 text-amber-800 dark:text-amber-300'
             }`}
           >
             <Radio
               className={`w-3 h-3 ${
-                isLiveBackend ? 'text-emerald-600 dark:text-emerald-400 animate-pulse' : 'text-cyan-600 dark:text-cyan-400'
+                isLiveBackend ? 'text-emerald-600 dark:text-emerald-400 animate-pulse' : 'text-amber-600 dark:text-amber-400 animate-ping'
               }`}
             />
             <span>
-              {isLiveBackend ? 'LIVE BACKEND WS :8000' : 'AUTONOMOUS CLIENT MCP ENGINE'}
+              {isLiveBackend ? 'LIVE BACKEND WS :8000' : 'CONNECTING TO BACKEND :8000'}
             </span>
           </div>
 
@@ -91,12 +93,6 @@ export const TopCommandBar: React.FC<TopCommandBarProps> = ({
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-indigo-950/70 border border-slate-200 dark:border-indigo-500/50 text-slate-700 dark:text-indigo-300 text-[11px] font-mono">
             <Layers className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
             <span>MCP Spec 2025-11-25 • Streamable HTTP</span>
-          </div>
-
-          {/* AWS Bedrock Badge */}
-          <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-mono">
-            <Cpu className="w-3 h-3 text-amber-500 dark:text-amber-400" />
-            <span>AWS Bedrock Converse API</span>
           </div>
         </div>
 
@@ -125,7 +121,27 @@ export const TopCommandBar: React.FC<TopCommandBarProps> = ({
             )}
           </button>
 
-          {/* 90-Second Judge Auto-Demo Director Button */}
+          {/* Randomize Scenario Button (New Backend-Driven Dynamic Generator) */}
+          <button
+            onClick={onRandomizeScenario}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/80 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-600/50 text-xs font-semibold transition-all shadow-sm"
+            title="Generate fresh eldercare scenario dynamically on Python backend"
+          >
+            <Dice5 className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 animate-spin-slow" />
+            <span className="hidden sm:inline">🎲 New Backend Scenario</span>
+          </button>
+
+          {/* Reset Care State Button */}
+          <button
+            onClick={onResetDemo}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold transition-all"
+            title="Reset caregiving state to initial seed specification"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">🔄 Reset Demo</span>
+          </button>
+
+          {/* Live Clinical Scenario Director Button */}
           <button
             onClick={isAutoDemoRunning ? onPauseAutoDemo : onStartAutoDemo}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md ${
@@ -138,7 +154,7 @@ export const TopCommandBar: React.FC<TopCommandBarProps> = ({
               <>
                 <Pause className="w-3.5 h-3.5 fill-current" />
                 <span>
-                  Demo Running ({autoDemoStep}/{totalDemoSteps}) • {autoDemoTimeRemaining}s
+                  Demo Active ({autoDemoStep}/{totalDemoSteps}) • {autoDemoTimeRemaining}s
                 </span>
               </>
             ) : (
@@ -147,16 +163,6 @@ export const TopCommandBar: React.FC<TopCommandBarProps> = ({
                 <span>Play 90s Judge Demo</span>
               </>
             )}
-          </button>
-
-          {/* Reset Demo State Button */}
-          <button
-            onClick={onResetDemo}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold transition-all"
-            title="Reset to 2:45 PM initial state"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Reset Demo</span>
           </button>
 
           {/* Cute Theme Toggle */}

@@ -141,7 +141,7 @@ class AlexaPlusBedrockAgent:
     # Main Agent Interaction Flow
     # -------------------------------------------------------------------------
 
-    async def chat(
+    async def process_turn(
         self,
         prompt: str,
         scenario_id: Optional[str] = None,
@@ -151,24 +151,62 @@ class AlexaPlusBedrockAgent:
         Processes voice prompt from senior or interactive scenario trigger from dashboard.
         Tries AWS Bedrock Converse API tool-use loop; seamlessly falls back on error/missing keys.
         """
+        # Append user message to conversation history
+        if prompt and prompt.strip():
+            await self.store.add_conversation_message(
+                role="user",
+                speaker="Eleanor",
+                text=prompt,
+            )
+
         await self.store.broadcast_agent_status("THINKING", "Processing care context and intentions...")
 
-        # 1. Flagship Scenario Short-Circuit (or Forced Fallback)
+        result: Dict[str, Any]
         if scenario_id:
             logger.info("Executing flagged scenario: %s", scenario_id)
-            return await self._run_deterministic_scenario(scenario_id, prompt, session_id)
-
-        # 2. Try AWS Bedrock Converse API if client configured and not explicitly forced demo
-        if self.bedrock_client and not self.demo_mode:
+            result = await self._run_deterministic_scenario(scenario_id, prompt, session_id)
+        elif self.bedrock_client and not self.demo_mode:
             try:
                 bedrock_result = await self._run_bedrock_converse_loop(prompt, session_id)
                 if bedrock_result:
-                    return bedrock_result
+                    result = bedrock_result
+                else:
+                    result = await self._run_deterministic_nl_router(prompt, session_id)
             except Exception as exc:
                 logger.warning("Bedrock Converse failed (%s); switching to Deterministic Multi-Tool Fallback.", exc)
+                result = await self._run_deterministic_nl_router(prompt, session_id)
+        else:
+            result = await self._run_deterministic_nl_router(prompt, session_id)
 
-        # 3. Deterministic Natural Language & Multi-Tool Orchestrator Fallback
-        return await self._run_deterministic_nl_router(prompt, session_id)
+        reply = result.get("reply", "")
+        tool_calls = result.get("tool_calls", [])
+
+        # Append assistant reply to conversation history
+        if reply:
+            await self.store.add_conversation_message(
+                role="assistant",
+                speaker="Alexa+",
+                text=reply,
+                tool_calls=tool_calls,
+            )
+
+        full_state = await self.store.get_state()
+        await self.store.broadcast_agent_status("SPEAKING", reply)
+        await self.store.broadcast_state_update(reason="AGENT_TURN_COMPLETED")
+
+        asyncio.create_task(self._return_to_idle_delayed(1.5))
+
+        return {
+            "reply": reply,
+            "tool_calls": tool_calls,
+            "state": full_state,
+        }
+
+    chat = process_turn
+
+    async def _return_to_idle_delayed(self, delay: float = 1.5):
+        await asyncio.sleep(delay)
+        await self.store.broadcast_agent_status("IDLE")
 
     # -------------------------------------------------------------------------
     # AWS Bedrock Converse Tool-Use Loop

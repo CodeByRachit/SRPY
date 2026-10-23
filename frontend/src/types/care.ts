@@ -19,7 +19,8 @@ export interface PatientProfile {
   location: string;
   condition_summary: string;
   status: PatientStatus;
-  adherence_Rate: number;
+  adherence_rate: number;
+  adherence_Rate?: number; // Dual key compatibility
   last_check_in: string;
   vitals: PatientVitals;
 }
@@ -72,7 +73,7 @@ export interface CareAlert {
 export interface TimelineEvent {
   id: string;
   timestamp: string;
-  type: 'MED_LOGGED' | 'MISSED_DOSE_FLAG' | 'APPOINTMENT_ADDED' | 'CHECKIN_ESCALATION' | 'CAREGIVER_NOTIFIED';
+  type: string;
   actor: string;
   summary: string;
 }
@@ -90,14 +91,13 @@ export interface McpTelemetryFrame {
   status: 'SUCCESS' | 'ERROR';
 }
 
-export interface CareSystemState {
-  patient: PatientProfile;
-  caregiver: CaregiverProfile;
-  medications: MedicationItem[];
-  appointments: AppointmentItem[];
-  alerts: CareAlert[];
-  activity_timeline: TimelineEvent[];
-  mcp_telemetry_log: McpTelemetryFrame[];
+export interface ConversationMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  speaker: string; // 'Eleanor' | 'Alexa+' | 'Caregiver' | 'System'
+  text: string;
+  timestamp: string;
+  tool_calls?: any[];
 }
 
 export interface ChatMessage {
@@ -110,5 +110,31 @@ export interface ChatMessage {
     latency_ms: number;
     status: 'SUCCESS' | 'ERROR';
     details?: string;
+  };
+}
+
+export interface ClinicalScenarioStatus {
+  isRunning: boolean;
+  step: number;
+  totalSteps: number;
+  story: string;
+  timeRemaining: number;
+}
+
+export type DemoStatus = ClinicalScenarioStatus;
+
+export interface CareSystemState {
+  patient: PatientProfile;
+  caregiver: CaregiverProfile;
+  medications: MedicationItem[];
+  appointments: AppointmentItem[];
+  alerts: CareAlert[];
+  activity_timeline: TimelineEvent[];
+  mcp_telemetry_log: McpTelemetryFrame[];
+  conversation_history: ConversationMessage[];
+  backend_meta?: {
+    mcp_spec: string;
+    transport: string;
+    engine: string;
   };
 }

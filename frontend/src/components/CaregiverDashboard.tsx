@@ -65,10 +65,11 @@ export const CaregiverDashboard: React.FC<CaregiverDashboardProps> = ({
 
   const currentStatus = statusConfig[patient.status] || statusConfig.HEALTHY;
 
-  // SVG Radial Adherence Calculation
+  // SVG Radial Adherence Calculation (Supports both adherence_rate and adherence_Rate)
+  const adherenceRate = patient.adherence_rate ?? patient.adherence_Rate ?? 50;
   const radius = 34;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (patient.adherence_Rate / 100) * circumference;
+  const strokeDashoffset = circumference - (adherenceRate / 100) * circumference;
 
   return (
     <div className="flex flex-col gap-4 text-slate-800 dark:text-slate-200 transition-colors duration-400">
@@ -146,9 +147,9 @@ export const CaregiverDashboard: React.FC<CaregiverDashboardProps> = ({
                   cy="40"
                   r={radius}
                   className={`transition-all duration-700 ease-out ${
-                    patient.adherence_Rate >= 75
+                    adherenceRate >= 75
                       ? 'stroke-emerald-500'
-                      : patient.adherence_Rate >= 50
+                      : adherenceRate >= 50
                       ? 'stroke-amber-500'
                       : 'stroke-rose-500'
                   }`}
@@ -161,7 +162,7 @@ export const CaregiverDashboard: React.FC<CaregiverDashboardProps> = ({
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                 <span className="text-sm font-extrabold text-slate-900 dark:text-white leading-none">
-                  {patient.adherence_Rate}%
+                  {adherenceRate}%
                 </span>
                 <span className="text-[8px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-mono mt-0.5">
                   Adherence

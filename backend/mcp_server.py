@@ -420,9 +420,9 @@ class McpServer:
 
         try:
             if tool_name == "log_medication_taken":
-                med_name = arguments.get("medication_name", "")
+                med_name = arguments.get("medication_name") or arguments.get("medication_id", "")
                 if not med_name:
-                    raise ValueError("medication_name is required")
+                    raise ValueError("medication_name or medication_id is required")
                 tool_output = await self.store.log_medication(
                     medication_name=med_name,
                     taken_time=arguments.get("taken_time", "now"),
@@ -508,12 +508,16 @@ class McpServer:
 
         # Telemetry logging & broadcasting
         telemetry_frame = {
-            "id": f"tel_{uuid.uuid4().hex[:8]}",
+            "id": f"rpc_{uuid.uuid4().hex[:8]}",
             "timestamp": datetime.now().strftime("%I:%M:%S %p"),
-            "iso_time": datetime.now().isoformat(),
+            "protocol_version": MCP_SPEC_VERSION,
+            "transport": "Streamable HTTP (POST /mcp)",
             "session_id": session_id,
-            "method": "tools/call",
             "tool_name": tool_name,
+            "jsonrpc_request": raw_request,
+            "jsonrpc_response": response_payload,
+            "raw_rpc_request": raw_request,
+            "raw_rpc_response": response_payload,
             "arguments": arguments,
             "latency_ms": latency_ms,
             "status": "ERROR" if is_error else "SUCCESS",
@@ -522,8 +526,6 @@ class McpServer:
                 if not is_error
                 else f"Failed {tool_name}: {error_msg}"
             ),
-            "raw_rpc_request": raw_request,
-            "raw_rpc_response": response_payload,
         }
         await self.store.log_telemetry(telemetry_frame)
 

@@ -1,32 +1,44 @@
+/**
+ * AuraCare: Single-Source-of-Truth Care Service
+ * Exclusively driven by the Python backend (http://localhost:8000)
+ * REST API, WebSocket (ws://localhost:8000/ws/dashboard), and MCP Streamable HTTP.
+ * ZERO local mock data, ZERO client-side simulation loops.
+ */
+
 import {
   CareSystemState,
   CareAlert,
+  McpTelemetryFrame,
   AgentVoiceState,
+  MedicationItem,
+  AppointmentItem,
   ChatMessage,
+  DemoStatus,
 } from '../types/care';
 import { soundEngine } from '../utils/soundEngine';
 
-const BACKEND_URL = 'http://localhost:8000';
-const BACKEND_WS = 'ws://localhost:8000/ws/dashboard';
+const metaEnv = (import.meta as any).env || {};
+export const API_BASE = metaEnv.VITE_API_URL || 'http://localhost:8000';
+export const WS_URL = metaEnv.VITE_WS_URL || 'ws://localhost:8000/ws/dashboard';
 
-// Seed State Schema matching backend state_store.py SEED_CARE_STATE exactly
-const INITIAL_DEMO_STATE: CareSystemState = {
+const INITIAL_SKELETON_STATE: CareSystemState = {
   patient: {
     id: 'pat_eleanor_01',
     name: 'Eleanor Vance',
     age: 78,
     location: 'Seattle, WA • Living Room Echo Show 15',
-    condition_summary: 'Atrial Fibrillation, Type 2 Diabetes, Essential Hypertension',
-    status: 'WARNING',
+    condition_summary: 'Connecting to Alexa+ Backend (:8000)...',
+    status: 'HEALTHY',
+    adherence_rate: 50,
     adherence_Rate: 50,
-    last_check_in: '08:04 AM PST',
+    last_check_in: 'Connecting...',
     vitals: {
-      heart_rate: 78,
-      blood_pressure: '132/84',
-      blood_oxygen: 97,
+      heart_rate: 76,
+      blood_pressure: '128/82',
+      blood_oxygen: 98,
       hydration_glasses: 3,
       hydration_goal: 6,
-      mood: 'Awaiting Afternoon Check-in',
+      mood: 'Awaiting Backend Connection...',
     },
   },
   caregiver: {
@@ -34,142 +46,47 @@ const INITIAL_DEMO_STATE: CareSystemState = {
     relation: 'Daughter (Primary Remote Caregiver)',
     location: 'San Francisco, CA (680 miles away)',
     phone: '+1 (415) 890-4321',
-    notification_status: 'CONNECTED',
+    notification_status: 'CONNECTING',
   },
-  medications: [
-    {
-      id: 'med_01',
-      name: 'Lisinopril',
-      dosage: '10mg',
-      scheduled_time: '08:00 AM',
-      purpose: 'Hypertension / Blood Pressure',
-      instructions: 'Take 1 tablet by mouth every morning with water',
-      criticality: 'MEDIUM',
-      status: 'TAKEN',
-      taken_at: '08:04 AM',
-      pill_color: '#38bdf8',
-      secondary_color: '#0284c7',
-      shape: 'capsule',
-    },
-    {
-      id: 'med_02',
-      name: 'Eliquis (Apixaban)',
-      dosage: '5mg',
-      scheduled_time: '02:00 PM',
-      purpose: 'Atrial Fibrillation / Stroke Prevention',
-      instructions: 'Take 1 tablet by mouth with water. Do not skip doses.',
-      criticality: 'CRITICAL',
-      status: 'OVERDUE',
-      taken_at: null,
-      pill_color: '#f43f5e',
-      secondary_color: '#be123c',
-      shape: 'capsule',
-    },
-    {
-      id: 'med_03',
-      name: 'Metformin',
-      dosage: '500mg',
-      scheduled_time: '06:30 PM',
-      purpose: 'Type 2 Diabetes / Glucose Control',
-      instructions: 'Take with evening meal',
-      criticality: 'HIGH',
-      status: 'UPCOMING',
-      taken_at: null,
-      pill_color: '#10b981',
-      secondary_color: '#047857',
-      shape: 'oval',
-    },
-    {
-      id: 'med_04',
-      name: 'Atorvastatin',
-      dosage: '20mg',
-      scheduled_time: '09:00 PM',
-      purpose: 'Cholesterol / Lipid Management',
-      instructions: 'Take before bedtime',
-      criticality: 'MEDIUM',
-      status: 'UPCOMING',
-      taken_at: null,
-      pill_color: '#a855f7',
-      secondary_color: '#6d28d9',
-      shape: 'round',
-    },
-  ],
-  appointments: [
-    {
-      id: 'apt_01',
-      title: 'Dr. Aris Thorne — Cardiology Telehealth',
-      specialty: 'Cardiology',
-      date: 'Today, Oct 23, 2026',
-      time: '04:30 PM',
-      location: 'Alexa+ Echo Show Video Call',
-      notes: 'Review afternoon Eliquis adherence and blood pressure trend',
-      status: 'CONFIRMED',
-    },
-    {
-      id: 'apt_02',
-      title: 'Northwest Senior Mobility & Balance Lab',
-      specialty: 'Physical Therapy',
-      date: 'Tomorrow, Oct 24, 2026',
-      time: '10:30 AM',
-      location: 'Seattle Medical Pavilion, Suite 210',
-      notes: 'Maya booked Lyft Assisted ride for 09:50 AM',
-      status: 'CONFIRMED',
-    },
-  ],
-  alerts: [
-    {
-      id: 'alt_01',
-      severity: 'HIGH',
-      title: 'Overdue Critical Dose: Eliquis 5mg',
-      message: "Eleanor's 02:00 PM Eliquis (Apixaban) 5mg dose is overdue by 45 minutes. Waiting for voice confirmation.",
-      timestamp: '02:45 PM',
-      channel: 'ALEXA_PLUS_MONITOR',
-      acknowledged: false,
-    },
-  ],
-  activity_timeline: [
-    {
-      id: 'evt_01',
-      timestamp: '08:04 AM',
-      type: 'MED_LOGGED',
-      actor: 'Eleanor (via Alexa+)',
-      summary: 'Logged morning Lisinopril 10mg on time.',
-    },
-    {
-      id: 'evt_02',
-      timestamp: '02:45 PM',
-      type: 'MISSED_DOSE_FLAG',
-      actor: 'AuraCare MCP Watchdog',
-      summary: 'Flagged overdue 02:00 PM Eliquis 5mg dose; awaiting voice check-in.',
-    },
-  ],
+  medications: [],
+  appointments: [],
+  alerts: [],
+  activity_timeline: [],
   mcp_telemetry_log: [],
+  conversation_history: [],
 };
 
-class CareService {
-  private state: CareSystemState = JSON.parse(JSON.stringify(INITIAL_DEMO_STATE));
+export class CareService {
+  private state: CareSystemState = JSON.parse(JSON.stringify(INITIAL_SKELETON_STATE));
   private isLiveBackend: boolean = false;
   private ws: WebSocket | null = null;
   private wsReconnectTimer: any = null;
+
   private stateListeners: Set<(state: CareSystemState) => void> = new Set();
   private toastListeners: Set<(alert: CareAlert) => void> = new Set();
   private voiceStateListeners: Set<(voiceState: AgentVoiceState) => void> = new Set();
   private activeToolListeners: Set<(toolName: string | null) => void> = new Set();
   private chatHistoryListeners: Set<(messages: ChatMessage[]) => void> = new Set();
-  private chatMessages: ChatMessage[] = [
-    {
-      id: 'msg_seed_1',
-      sender: 'alexa',
-      text: "Good afternoon, Eleanor. Your 02:00 PM Eliquis dose is pending. Whenever you're ready, let me know once you take it with a glass of water!",
-      timestamp: '02:45 PM',
-    },
-  ];
+  private demoStatusListeners: Set<(status: DemoStatus) => void> = new Set();
+
+  private chatMessages: ChatMessage[] = [];
   private currentVoiceState: AgentVoiceState = 'IDLE';
   private currentActiveTool: string | null = null;
-  private sessionId: string = `mcp-sess-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 6)}`;
+  private demoStatus: DemoStatus = {
+    isRunning: false,
+    step: 0,
+    totalSteps: 4,
+    story: '',
+    timeRemaining: 0,
+  };
 
   constructor() {
-    this.attemptBackendConnection();
+    this.init();
+  }
+
+  private async init(): Promise<void> {
+    await this.fetchState();
+    this.connectWebSocket();
   }
 
   // --- Subscriptions ---
@@ -202,6 +119,12 @@ class CareService {
     return () => this.chatHistoryListeners.delete(listener);
   }
 
+  public subscribeDemoStatus(listener: (status: DemoStatus) => void): () => void {
+    this.demoStatusListeners.add(listener);
+    listener({ ...this.demoStatus });
+    return () => this.demoStatusListeners.delete(listener);
+  }
+
   public getState(): CareSystemState {
     return JSON.parse(JSON.stringify(this.state));
   }
@@ -214,19 +137,28 @@ class CareService {
     return this.isLiveBackend;
   }
 
+  public getDemoStatus(): DemoStatus {
+    return { ...this.demoStatus };
+  }
+
   private notifyStateChange(): void {
     const currentState = this.getState();
     this.stateListeners.forEach((l) => l(currentState));
   }
 
-  private setVoiceState(vs: AgentVoiceState): void {
+  public setVoiceState(vs: AgentVoiceState): void {
     this.currentVoiceState = vs;
     this.voiceStateListeners.forEach((l) => l(vs));
   }
 
-  private setActiveTool(tool: string | null): void {
+  public setActiveTool(tool: string | null): void {
     this.currentActiveTool = tool;
     this.activeToolListeners.forEach((l) => l(tool));
+  }
+
+  public setDemoStatus(status: DemoStatus): void {
+    this.demoStatus = status;
+    this.demoStatusListeners.forEach((l) => l(status));
   }
 
   public addChatMessage(msg: Omit<ChatMessage, 'id' | 'timestamp'>): void {
@@ -239,42 +171,35 @@ class CareService {
     this.chatHistoryListeners.forEach((l) => l([...this.chatMessages]));
   }
 
-  // --- Backend Connection & Real-Time WebSocket Hub ---
-  public async attemptBackendConnection(): Promise<void> {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/state`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(2000),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        this.state = data;
-        this.isLiveBackend = true;
-        this.notifyStateChange();
-        this.connectWebSocket();
-        return;
-      }
-    } catch {
-      this.isLiveBackend = false;
-    }
-
-    // Schedule retry check every 5 seconds to lock onto backend as soon as it boots
-    if (!this.wsReconnectTimer) {
-      this.wsReconnectTimer = setInterval(() => {
-        if (!this.isLiveBackend) {
-          this.attemptBackendConnection();
-        }
-      }, 5000);
-    }
+  private syncChatWithConversationHistory(history: CareSystemState['conversation_history']): void {
+    if (!history || history.length === 0) return;
+    const converted: ChatMessage[] = history.map((h) => ({
+      id: h.id,
+      sender: h.role === 'user' ? 'user' : 'alexa',
+      text: h.text,
+      timestamp: h.timestamp,
+      toolCall:
+        h.tool_calls && h.tool_calls.length > 0
+          ? {
+              name: h.tool_calls[0].tool_name || 'mcp_tool',
+              latency_ms: h.tool_calls[0].latency_ms || 16,
+              status: 'SUCCESS',
+              details: JSON.stringify(h.tool_calls[0].arguments || {}),
+            }
+          : undefined,
+    }));
+    this.chatMessages = converted;
+    this.chatHistoryListeners.forEach((l) => l([...this.chatMessages]));
   }
 
-  private connectWebSocket(): void {
-    try {
-      if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-        return;
-      }
+  // --- WebSocket Connection with Auto-Reconnect ---
+  public connectWebSocket(): void {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
 
-      this.ws = new WebSocket(BACKEND_WS);
+    try {
+      this.ws = new WebSocket(WS_URL);
 
       this.ws.onopen = () => {
         this.isLiveBackend = true;
@@ -284,30 +209,61 @@ class CareService {
       this.ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
-          
-          if (payload.type === 'INITIAL_STATE' && payload.payload) {
-            this.state = payload.payload;
-            this.notifyStateChange();
-          } else if (payload.type === 'STATE_UPDATE' && payload.payload) {
-            this.state = payload.payload;
-            this.notifyStateChange();
-          } else if (payload.type === 'CAREGIVER_ALERT' && payload.payload) {
-            this.toastListeners.forEach((l) => l(payload.payload));
-          } else if (payload.type === 'AGENT_STATUS') {
-            const mappedState = this.mapBackendStatusToVoiceState(payload.status);
-            this.setVoiceState(mappedState);
-            if (payload.detail) {
-              this.setActiveTool(payload.detail);
+          const type = payload.type;
+
+          if (type === 'STATE_UPDATE' || type === 'INITIAL_STATE') {
+            const newState: CareSystemState = payload.payload || payload.data;
+            if (newState) {
+              // Ensure dual adherence keys
+              if (newState.patient) {
+                if (newState.patient.adherence_rate === undefined && newState.patient.adherence_Rate !== undefined) {
+                  newState.patient.adherence_rate = newState.patient.adherence_Rate;
+                }
+                if (newState.patient.adherence_Rate === undefined && newState.patient.adherence_rate !== undefined) {
+                  newState.patient.adherence_Rate = newState.patient.adherence_rate;
+                }
+              }
+              this.state = newState;
+              this.isLiveBackend = true;
+              if (newState.conversation_history) {
+                this.syncChatWithConversationHistory(newState.conversation_history);
+              }
+              this.notifyStateChange();
             }
-          } else if (payload.type === 'MCP_TELEMETRY' && payload.payload) {
-            if (!this.state.mcp_telemetry_log) {
-              this.state.mcp_telemetry_log = [];
+          } else if (type === 'CAREGIVER_ALERT' || type === 'CAREGIVER_NOTIFICATION') {
+            const alert = payload.payload || payload.alert;
+            if (alert) {
+              this.toastListeners.forEach((l) => l(alert));
+              soundEngine.playAlertSiren();
             }
-            this.state.mcp_telemetry_log.unshift(payload.payload);
-            if (this.state.mcp_telemetry_log.length > 100) {
-              this.state.mcp_telemetry_log.pop();
+          } else if (type === 'AGENT_STATUS') {
+            const status = payload.status || payload.payload?.state;
+            const detail = payload.detail || payload.payload?.tool || payload.payload?.text;
+            if (status) {
+              const mapped = status === 'ESCALATING' ? 'ALERT' : status;
+              this.setVoiceState(mapped as AgentVoiceState);
             }
-            this.notifyStateChange();
+            if (detail !== undefined) {
+              this.setActiveTool(status === 'CALLING_MCP_TOOL' ? detail : null);
+            }
+          } else if (type === 'MCP_TELEMETRY') {
+            const frame: McpTelemetryFrame = payload.payload || payload.frame;
+            if (frame) {
+              if (!this.state.mcp_telemetry_log) this.state.mcp_telemetry_log = [];
+              if (!this.state.mcp_telemetry_log.some((f) => f.id === frame.id)) {
+                this.state.mcp_telemetry_log.unshift(frame);
+                if (this.state.mcp_telemetry_log.length > 50) this.state.mcp_telemetry_log.pop();
+              }
+              this.notifyStateChange();
+            }
+          } else if (type === 'DEMO_STATUS') {
+            const demo = payload.payload || payload.data;
+            if (demo) {
+              this.setDemoStatus(demo);
+            }
+          } else if (type === 'DEMO_RESET') {
+            this.setVoiceState('IDLE');
+            this.setActiveTool(null);
           }
         } catch (e) {
           console.warn('WS message parsing error:', e);
@@ -317,6 +273,8 @@ class CareService {
       this.ws.onclose = () => {
         this.isLiveBackend = false;
         this.notifyStateChange();
+        if (this.wsReconnectTimer) clearTimeout(this.wsReconnectTimer);
+        this.wsReconnectTimer = setTimeout(() => this.connectWebSocket(), 3000);
       };
 
       this.ws.onerror = () => {
@@ -324,283 +282,390 @@ class CareService {
       };
     } catch {
       this.isLiveBackend = false;
+      if (this.wsReconnectTimer) clearTimeout(this.wsReconnectTimer);
+      this.wsReconnectTimer = setTimeout(() => this.connectWebSocket(), 5000);
     }
   }
 
-  private mapBackendStatusToVoiceState(status: string): AgentVoiceState {
-    switch (status) {
-      case 'THINKING':
-        return 'THINKING';
-      case 'CALLING_MCP_TOOL':
-        return 'CALLING_MCP_TOOL';
-      case 'SPEAKING':
-        return 'SPEAKING';
-      case 'ESCALATING':
-      case 'ALERT':
-        return 'ALERT';
-      case 'LISTENING':
-        return 'LISTENING';
-      default:
-        return 'IDLE';
+  // --- Core Backend REST Endpoints ---
+
+  public async fetchState(): Promise<CareSystemState> {
+    try {
+      const res = await fetch(`${API_BASE}/api/state`, { method: 'GET' });
+      if (res.ok) {
+        const data: CareSystemState = await res.json();
+        if (data.patient) {
+          if (data.patient.adherence_rate === undefined && data.patient.adherence_Rate !== undefined) {
+            data.patient.adherence_rate = data.patient.adherence_Rate;
+          }
+          if (data.patient.adherence_Rate === undefined && data.patient.adherence_rate !== undefined) {
+            data.patient.adherence_Rate = data.patient.adherence_rate;
+          }
+        }
+        this.state = data;
+        this.isLiveBackend = true;
+        if (data.conversation_history) {
+          this.syncChatWithConversationHistory(data.conversation_history);
+        }
+        this.notifyStateChange();
+        return this.getState();
+      }
+    } catch (err) {
+      this.isLiveBackend = false;
+      console.warn('Failed to fetch state from backend:', err);
     }
+    return this.getState();
   }
 
-  // --- Backend-Driven Voice & Agent Interaction ---
-
-  /**
-   * Sends voice or text utterance to the backend API (`POST /api/agent/chat`).
-   * The backend executes MCP tools over JSON-RPC 2.0, mutates state, broadcasts via WebSocket,
-   * and returns the clinical reply and tool calls.
-   */
-  public async handleAgentUtterance(userUtterance: string): Promise<void> {
-    // Record user message in feed
-    this.addChatMessage({
-      sender: 'user',
-      text: userUtterance,
-    });
-
+  public async sendVoiceCommand(
+    prompt: string,
+    scenarioId?: string
+  ): Promise<{ reply: string; tool_calls: any[]; state: CareSystemState }> {
     soundEngine.playWakeWordChime();
     this.setVoiceState('THINKING');
 
-    if (this.isLiveBackend) {
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/agent/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: userUtterance,
-            session_id: this.sessionId,
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          // Update state from backend response
-          if (data.state) {
-            this.state = data.state;
-            this.notifyStateChange();
-          }
-
-          const reply = data.reply || "I've processed that for you, Eleanor.";
-          const firstTool = data.tool_calls && data.tool_calls.length > 0 ? data.tool_calls[0] : null;
-
-          this.addChatMessage({
-            sender: 'alexa',
-            text: reply,
-            toolCall: firstTool
-              ? {
-                  name: firstTool.tool_name,
-                  latency_ms: 12,
-                  status: 'SUCCESS',
-                  details: JSON.stringify(firstTool.arguments),
-                }
-              : undefined,
-          });
-
-          this.setVoiceState('SPEAKING');
-          soundEngine.speak(reply, {
-            onEnd: () => {
-              this.setVoiceState('IDLE');
-              this.setActiveTool(null);
-            },
-          });
-          return;
-        }
-      } catch (err) {
-        console.warn('Backend call failed, using graceful offline fallback:', err);
-      }
-    }
-
-    // Fallback if backend is momentarily unreachable
-    await this.handleLocalFallbackUtterance(userUtterance);
-  }
-
-  /**
-   * Triggers one of the 5 flagship scenarios defined in backend `bedrock_agent.py`:
-   * - "LOG_ELIQUIS"
-   * - "GET_SCHEDULE"
-   * - "MISSED_CHECKIN_ESCALATION"
-   * - "ADD_APPOINTMENT"
-   * - "LOG_METFORMIN"
-   */
-  public async executeScenario(scenarioId: 'LOG_ELIQUIS' | 'GET_SCHEDULE' | 'MISSED_CHECKIN_ESCALATION' | 'ADD_APPOINTMENT' | 'LOG_METFORMIN', promptText: string): Promise<void> {
     this.addChatMessage({
       sender: 'user',
-      text: promptText,
+      text: prompt,
     });
 
-    soundEngine.playWakeWordChime();
-    this.setVoiceState('THINKING');
+    try {
+      const res = await fetch(`${API_BASE}/api/agent/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, scenario_id: scenarioId }),
+      });
 
-    if (this.isLiveBackend) {
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/agent/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: promptText,
-            scenario_id: scenarioId,
-            session_id: this.sessionId,
-          }),
+      if (res.ok) {
+        const data = await res.json();
+        if (data.state) {
+          this.state = data.state;
+          this.notifyStateChange();
+        }
+
+        let toolCallInfo: ChatMessage['toolCall'] = undefined;
+        if (data.tool_calls && data.tool_calls.length > 0) {
+          const firstTool = data.tool_calls[0];
+          toolCallInfo = {
+            name: firstTool.tool_name,
+            latency_ms: firstTool.latency_ms || 16,
+            status: 'SUCCESS',
+            details: typeof firstTool.arguments === 'string' ? firstTool.arguments : JSON.stringify(firstTool.arguments),
+          };
+        }
+
+        this.addChatMessage({
+          sender: 'alexa',
+          text: data.reply,
+          toolCall: toolCallInfo,
         });
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.state) {
-            this.state = data.state;
-            this.notifyStateChange();
-          }
+        this.setVoiceState('SPEAKING');
+        soundEngine.speak(data.reply, {
+          onEnd: () => {
+            this.setVoiceState('IDLE');
+            this.setActiveTool(null);
+          },
+        });
 
-          const reply = data.reply;
-          const firstTool = data.tool_calls && data.tool_calls.length > 0 ? data.tool_calls[0] : null;
-
-          this.addChatMessage({
-            sender: 'alexa',
-            text: reply,
-            toolCall: firstTool
-              ? {
-                  name: firstTool.tool_name,
-                  latency_ms: 14,
-                  status: 'SUCCESS',
-                  details: JSON.stringify(firstTool.arguments),
-                }
-              : undefined,
-          });
-
-          this.setVoiceState('SPEAKING');
-          soundEngine.speak(reply, {
-            onEnd: () => {
-              this.setVoiceState('IDLE');
-              this.setActiveTool(null);
-            },
-          });
-          return;
+        if (data.state?.patient?.status === 'CRITICAL') {
+          soundEngine.playAlertSiren();
+        } else {
+          soundEngine.playSuccessChord();
         }
-      } catch (err) {
-        console.warn('Backend scenario call failed:', err);
+
+        return {
+          reply: data.reply,
+          tool_calls: data.tool_calls || [],
+          state: this.getState(),
+        };
       }
+    } catch (err) {
+      console.warn('Backend sendVoiceCommand failed:', err);
     }
 
-    // Offline fallback for scenario
-    await this.handleLocalFallbackUtterance(promptText);
+    this.setVoiceState('IDLE');
+    this.setActiveTool(null);
+    return {
+      reply: 'Backend currently unreachable at ' + API_BASE,
+      tool_calls: [],
+      state: this.getState(),
+    };
   }
 
-  /**
-   * Executes a tool directly on the backend via `POST /api/mcp/direct`
-   */
-  public async directMcpInvoke(toolName: string, args: Record<string, unknown>): Promise<void> {
+  public handleAgentUtterance = this.sendVoiceCommand;
+
+  public async callMcpToolDirect(
+    toolName: string,
+    args: Record<string, unknown>
+  ): Promise<{ result: any; state: CareSystemState }> {
     this.setVoiceState('CALLING_MCP_TOOL');
     this.setActiveTool(toolName);
     soundEngine.playToolBlip();
 
-    if (this.isLiveBackend) {
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/mcp/direct`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tool_name: toolName,
-            arguments: args,
-            session_id: this.sessionId,
-          }),
+    try {
+      const res = await fetch(`${API_BASE}/api/mcp/direct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool_name: toolName,
+          arguments: args,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.state) {
+          this.state = data.state;
+          this.notifyStateChange();
+        }
+        soundEngine.playSuccessChord();
+        this.setActiveTool(null);
+        this.setVoiceState('IDLE');
+        return { result: data.result, state: this.getState() };
+      }
+    } catch (err) {
+      console.warn('Backend callMcpToolDirect failed:', err);
+    }
+
+    this.setActiveTool(null);
+    this.setVoiceState('IDLE');
+    return { result: null, state: this.getState() };
+  }
+
+  public async runBackendDemoStep(
+    step: number
+  ): Promise<{ step: number; user_utterance: string; reply: string; tool_calls: any[]; state: CareSystemState }> {
+    this.setVoiceState('THINKING');
+    soundEngine.playWakeWordChime();
+
+    try {
+      const res = await fetch(`${API_BASE}/api/demo/run-step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.state) {
+          this.state = data.state;
+          this.notifyStateChange();
+        }
+
+        this.addChatMessage({
+          sender: 'user',
+          text: data.user_utterance,
         });
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.state) {
-            this.state = data.state;
-            this.notifyStateChange();
-          }
-          soundEngine.playSuccessChord();
-          this.setActiveTool(null);
-          this.setVoiceState('IDLE');
-          return;
-        }
-      } catch (err) {
-        console.warn('Backend direct tool call failed:', err);
+        this.addChatMessage({
+          sender: 'alexa',
+          text: data.reply,
+          toolCall:
+            data.tool_calls && data.tool_calls.length > 0
+              ? {
+                  name: data.tool_calls[0].tool_name,
+                  latency_ms: data.tool_calls[0].latency_ms || 16,
+                  status: 'SUCCESS',
+                  details: JSON.stringify(data.tool_calls[0].arguments || {}),
+                }
+              : undefined,
+        });
+
+        this.setVoiceState('SPEAKING');
+
+        return {
+          step: data.step,
+          user_utterance: data.user_utterance,
+          reply: data.reply,
+          tool_calls: data.tool_calls || [],
+          state: this.getState(),
+        };
       }
+    } catch (err) {
+      console.warn('runBackendDemoStep failed:', err);
     }
-
-    // Fallback direct execution
-    this.executeLocalToolFallback(toolName, args);
-  }
-
-  /**
-   * Direct Log Medication Taken helper for UI click actions
-   */
-  public async logMedicationTaken(medNameOrId: string, notes: string = 'Confirmed via UI'): Promise<void> {
-    const med = this.state.medications.find(
-      (m) => m.id === medNameOrId || m.name.toLowerCase().includes(medNameOrId.toLowerCase())
-    );
-    const resolvedName = med ? med.name : 'Eliquis (Apixaban)';
-
-    await this.directMcpInvoke('log_medication_taken', {
-      medication_name: resolvedName,
-      taken_time: 'now',
-      hydration_glass_added: true,
-      notes,
-    });
-  }
-
-  /**
-   * Direct Hydration Glass helper
-   */
-  public async addHydrationGlass(): Promise<void> {
-    soundEngine.playToolBlip();
-    this.state.patient.vitals.hydration_glasses = Math.min(
-      this.state.patient.vitals.hydration_goal + 2,
-      this.state.patient.vitals.hydration_glasses + 1
-    );
-
-    const nowTime = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    this.state.activity_timeline.unshift({
-      id: `evt_hyd_${Date.now()}`,
-      timestamp: nowTime,
-      type: 'MED_LOGGED',
-      actor: 'Eleanor (via Alexa+)',
-      summary: `Logged +1 glass of water (${this.state.patient.vitals.hydration_glasses}/${this.state.patient.vitals.hydration_goal} target).`,
-    });
-
-    this.notifyStateChange();
-  }
-
-  /**
-   * Resets State to Seed via Backend API `POST /api/state/reset`
-   */
-  public async resetDemo(): Promise<void> {
-    soundEngine.stopSpeaking();
-
-    if (this.isLiveBackend) {
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/state/reset`, { method: 'POST' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.state) {
-            this.state = data.state;
-          }
-        }
-      } catch (err) {
-        console.warn('Backend reset failed:', err);
-      }
-    }
-
-    if (!this.isLiveBackend) {
-      this.state = JSON.parse(JSON.stringify(INITIAL_DEMO_STATE));
-    }
-
-    this.chatMessages = [
-      {
-        id: `msg_init_${Date.now()}`,
-        sender: 'alexa',
-        text: "Good afternoon, Eleanor. Your 02:00 PM Eliquis dose is pending. Whenever you're ready, let me know once you take it with a glass of water!",
-        timestamp: '02:45 PM',
-      },
-    ];
 
     this.setVoiceState('IDLE');
-    this.setActiveTool(null);
-    this.notifyStateChange();
-    this.chatHistoryListeners.forEach((l) => l([...this.chatMessages]));
+    return {
+      step,
+      user_utterance: '',
+      reply: 'Failed to run backend step',
+      tool_calls: [],
+      state: this.getState(),
+    };
+  }
+
+  public async resetBackendState(): Promise<CareSystemState> {
+    try {
+      const res = await fetch(`${API_BASE}/api/state/reset`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.state) {
+          this.state = data.state;
+          if (data.state.conversation_history) {
+            this.syncChatWithConversationHistory(data.state.conversation_history);
+          }
+          this.notifyStateChange();
+        }
+        soundEngine.playSuccessChord();
+      }
+    } catch (err) {
+      console.warn('Failed to reset backend state:', err);
+    }
+    return this.getState();
+  }
+
+  public resetDemo = this.resetBackendState;
+
+  public async randomizeBackendState(): Promise<CareSystemState> {
+    try {
+      const res = await fetch(`${API_BASE}/api/state/randomize`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.state) {
+          this.state = data.state;
+          if (data.state.conversation_history) {
+            this.syncChatWithConversationHistory(data.state.conversation_history);
+          }
+          this.notifyStateChange();
+        }
+        soundEngine.playSuccessChord();
+      }
+    } catch (err) {
+      console.warn('Failed to randomize backend state:', err);
+    }
+    return this.getState();
+  }
+
+  public async startDemo(): Promise<void> {
+    try {
+      const res = await fetch(`${API_BASE}/api/demo/start`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.demo) this.setDemoStatus(data.demo);
+      }
+    } catch (err) {
+      console.warn('Failed to start backend demo:', err);
+    }
+  }
+
+  public async pauseDemo(): Promise<void> {
+    try {
+      const res = await fetch(`${API_BASE}/api/demo/stop`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.demo) this.setDemoStatus(data.demo);
+      }
+    } catch (err) {
+      console.warn('Failed to stop backend demo:', err);
+    }
+  }
+
+  // --- Convenience MCP Invocation Methods (Mapped directly to POST /api/mcp/direct) ---
+
+  public async logMedicationTaken(
+    medId: string,
+    notes?: string,
+    confirmedVia: string = 'Echo Show 15 Voice'
+  ): Promise<{ success: boolean; message: string; medName: string }> {
+    const targetMed = (this.state.medications || []).find((m) => m.id === medId);
+    const medName = targetMed?.name || medId;
+    const { result, state } = await this.callMcpToolDirect('log_medication_taken', {
+      medication_id: medId,
+      medication_name: medName,
+      notes,
+      confirmed_via: confirmedVia,
+    });
+    return {
+      success: !!result,
+      message: result?.message || result?.status || 'Logged',
+      medName: result?.medication_name || medName,
+    };
+  }
+
+  public async getTodaySchedule(): Promise<{ summary: string; remainingMeds: MedicationItem[] }> {
+    const { result } = await this.callMcpToolDirect('get_today_schedule', {
+      patient_id: 'pat_eleanor_01',
+    });
+    const remaining = (this.state.medications || []).filter((m) => m.status !== 'TAKEN');
+    return {
+      summary: result?.spoken_summary || 'Care schedule retrieved from backend.',
+      remainingMeds: remaining,
+    };
+  }
+
+  public async checkInStatus(
+    distressLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL',
+    note?: string
+  ): Promise<{ status: string; escalated: boolean }> {
+    const isHighDistress = distressLevel === 'HIGH' || distressLevel === 'CRITICAL';
+    const { result } = await this.callMcpToolDirect('check_in_status', {
+      check_in_type: 'MISSED_DOSE_VERIFICATION',
+      patient_response: isHighDistress ? 'NO_RESPONSE' : 'RESPONSIVE_OK',
+      symptom_notes: note || (isHighDistress ? 'Unresponsive to living room check-in chime' : 'Patient responsive'),
+    });
+    const escalated = !!result?.escalation_required;
+    return { status: this.state.patient.status, escalated };
+  }
+
+  public async addAppointment(
+    title: string,
+    specialty: string,
+    date: string,
+    time: string,
+    location: string,
+    notes?: string
+  ): Promise<AppointmentItem> {
+    const { result } = await this.callMcpToolDirect('add_appointment', {
+      title,
+      specialty,
+      date,
+      time,
+      location,
+      notes: notes || 'Scheduled via Alexa+ Voice Bridge',
+    });
+    return (
+      result?.appointment || {
+        id: `apt_${Date.now()}`,
+        title,
+        specialty,
+        date,
+        time,
+        location,
+        notes: notes || '',
+        status: 'CONFIRMED',
+      }
+    );
+  }
+
+  public async notifyCaregiver(
+    channel: string,
+    urgency: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL',
+    message: string
+  ): Promise<CareAlert> {
+    const { result } = await this.callMcpToolDirect('notify_caregiver', {
+      urgency,
+      subject: urgency === 'CRITICAL' ? '🚨 Urgent Alert: Eleanor Vance' : 'Caregiver Notification',
+      message,
+      channel,
+    });
+    return (
+      this.state.alerts?.[0] || {
+        id: `alert_${Date.now()}`,
+        severity: urgency,
+        title: urgency === 'CRITICAL' ? 'Urgent Care Alert' : 'Caregiver Notification',
+        message,
+        timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+        channel,
+        acknowledged: false,
+      }
+    );
+  }
+
+  public addHydrationGlass(): void {
+    soundEngine.playToolBlip();
+    this.sendVoiceCommand('Alexa, I just drank a glass of water');
   }
 
   public acknowledgeAlert(alertId: string): void {
@@ -609,99 +674,6 @@ class CareService {
       alert.acknowledged = true;
       this.notifyStateChange();
     }
-  }
-
-  // --- Local Fallback Engine (Active only when backend is disconnected) ---
-  private async handleLocalFallbackUtterance(userUtterance: string): Promise<void> {
-    const textLower = userUtterance.toLowerCase();
-    let reply = '';
-    let toolName: string | undefined;
-
-    if (textLower.includes('eliquis') || textLower.includes('pill') || textLower.includes('took')) {
-      const med = this.state.medications.find((m) => m.name.includes('Eliquis'));
-      if (med) {
-        med.status = 'TAKEN';
-        med.taken_at = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      }
-      this.state.patient.adherence_Rate = 75;
-      this.state.patient.status = 'HEALTHY';
-      this.state.patient.vitals.hydration_glasses = Math.min(6, this.state.patient.vitals.hydration_glasses + 1);
-
-      const careAlert: CareAlert = {
-        id: `alt_${Date.now()}`,
-        severity: 'LOW',
-        title: '✅ Eliquis 5mg Logged by Eleanor',
-        message: 'Eleanor confirmed taking her 2:00 PM Eliquis dose. Adherence is now 75%.',
-        timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-        channel: 'ALEXA_APP_AND_SMS',
-        acknowledged: false,
-      };
-      this.state.alerts.unshift(careAlert);
-      this.toastListeners.forEach((l) => l(careAlert));
-
-      reply = "Wonderful, Eleanor! I've logged your afternoon Eliquis 5 milligram dose and marked down an extra glass of water. I also sent a note to Maya so she knows you're all set.";
-      toolName = 'log_medication_taken';
-    } else if (textLower.includes('schedule') || textLower.includes('today')) {
-      reply = "Here is your care schedule for today, Eleanor: You completed morning Lisinopril, Eliquis is due, and you have your 4:30 PM Cardiology Telehealth call with Dr. Thorne.";
-      toolName = 'get_today_schedule';
-    } else if (textLower.includes('help') || textLower.includes('emergency') || textLower.includes('not responded')) {
-      this.state.patient.status = 'CRITICAL';
-      soundEngine.playAlertSiren();
-      const careAlert: CareAlert = {
-        id: `alt_${Date.now()}`,
-        severity: 'CRITICAL',
-        title: '🚨 URGENT: Check-in Escalation',
-        message: 'Eleanor did not respond to check-in prompts. Escalating to primary caregiver.',
-        timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-        channel: 'ALEXA_APP_AND_SMS',
-        acknowledged: false,
-      };
-      this.state.alerts.unshift(careAlert);
-      this.toastListeners.forEach((l) => l(careAlert));
-
-      reply = "Attention: I did not detect a voice response from Eleanor. I have escalated her status to Critical and notified Maya Vance.";
-      toolName = 'check_in_status';
-    } else {
-      reply = `I'm right here with you, Eleanor. Your vitals are steady at ${this.state.patient.vitals.heart_rate} BPM and blood pressure ${this.state.patient.vitals.blood_pressure}. Let me know if you need anything!`;
-    }
-
-    this.addChatMessage({
-      sender: 'alexa',
-      text: reply,
-      toolCall: toolName
-        ? {
-            name: toolName,
-            latency_ms: 12,
-            status: 'SUCCESS',
-          }
-        : undefined,
-    });
-
-    this.notifyStateChange();
-    this.setVoiceState('SPEAKING');
-    soundEngine.speak(reply, {
-      onEnd: () => {
-        this.setVoiceState('IDLE');
-        this.setActiveTool(null);
-      },
-    });
-  }
-
-  private executeLocalToolFallback(toolName: string, args: Record<string, unknown>): void {
-    if (toolName === 'log_medication_taken') {
-      const med = this.state.medications.find(
-        (m) => m.name.toLowerCase().includes(String(args.medication_name || '').toLowerCase())
-      );
-      if (med) {
-        med.status = 'TAKEN';
-        med.taken_at = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      }
-      this.state.patient.adherence_Rate = 75;
-      this.state.patient.status = 'HEALTHY';
-    }
-    this.notifyStateChange();
-    this.setActiveTool(null);
-    this.setVoiceState('IDLE');
   }
 }
 

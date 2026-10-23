@@ -6,6 +6,7 @@ import { CaregiverDashboard } from './components/CaregiverDashboard';
 import { AlexaMcpSimulator } from './components/AlexaMcpSimulator';
 import { CaregiverPhoneToast } from './components/CaregiverPhoneToast';
 import { CuteThemeToggle } from './components/CuteThemeToggle';
+import { IntroPage } from './components/IntroPage';
 import {
   X,
   Play,
@@ -16,9 +17,14 @@ import {
   Radio,
   Layers,
   Dice5,
+  Globe,
+  Sliders,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
+  // Page Navigation: 'intro' (Landing & 3D Architecture) vs 'console' (Live Care Console)
+  const [activePage, setActivePage] = useState<'intro' | 'console'>('intro');
+
   // Theme State - Default to Warm Spatial Light Theme
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('auracare_theme');
@@ -206,6 +212,13 @@ export const App: React.FC = () => {
     if (autoDemoCountdownRef.current) clearInterval(autoDemoCountdownRef.current);
   }, []);
 
+  const handleRunJudgeDemoFromIntro = () => {
+    setActivePage('console');
+    setTimeout(() => {
+      runAutoDemoSequence();
+    }, 200);
+  };
+
   return (
     <div className="min-h-screen bg-[#F3F2EE] dark:bg-[#0B0F19] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-400 selection:bg-cyan-500/30 selection:text-cyan-900 p-2 sm:p-4 md:p-6 justify-center items-center">
       {/* 1. Floating Top Command Bar (Judge Controls & Status) */}
@@ -241,6 +254,32 @@ export const App: React.FC = () => {
             <Layers className="w-3 h-3 text-indigo-500" />
             <span>MCP Spec 2025-11-25 • Streamable HTTP</span>
           </div>
+        </div>
+
+        {/* Navigation Page Switcher: Intro/Overview vs Live Console */}
+        <div className="flex items-center p-1 rounded-2xl bg-white/70 dark:bg-slate-900/80 border border-white/80 dark:border-slate-800 shadow-sm backdrop-blur-md">
+          <button
+            onClick={() => setActivePage('intro')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              activePage === 'intro'
+                ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>Overview &amp; 3D</span>
+          </button>
+          <button
+            onClick={() => setActivePage('console')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              activePage === 'console'
+                ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Live Care Console</span>
+          </button>
         </div>
 
         {/* Action Buttons: 90s Judge Auto-Demo, Randomize Scenario, Reset, Audio, Theme */}
@@ -337,32 +376,40 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* 2. THE MASTER GLASS SLAB */}
-      <main className="max-w-[1340px] w-full glass-slab p-3 sm:p-4.5 flex flex-col lg:flex-row items-stretch gap-4 min-h-[660px]">
-        {/* Left Column (approx 65% width): Caregiver Dashboard */}
-        <div className="lg:w-[65%] w-full flex flex-col">
-          <CaregiverDashboard
-            state={state}
-            activeTool={activeTool}
-            onLogMedication={(medId) =>
-              careService.callMcpToolDirect('log_medication_taken', { medication_id: medId })
-            }
-            onAddHydration={() => careService.addHydrationGlass()}
-          />
-        </div>
+      {/* 2. PAGE CONTENT: INTRO OR LIVE CONSOLE */}
+      {activePage === 'intro' ? (
+        <IntroPage
+          state={state}
+          onLaunchConsole={() => setActivePage('console')}
+          onRunJudgeDemo={handleRunJudgeDemoFromIntro}
+        />
+      ) : (
+        <main className="max-w-[1340px] w-full glass-slab p-3 sm:p-4.5 flex flex-col lg:flex-row items-stretch gap-4 min-h-[660px]">
+          {/* Left Column (approx 65% width): Caregiver Dashboard */}
+          <div className="lg:w-[65%] w-full flex flex-col">
+            <CaregiverDashboard
+              state={state}
+              activeTool={activeTool}
+              onLogMedication={(medId) =>
+                careService.callMcpToolDirect('log_medication_taken', { medication_id: medId })
+              }
+              onAddHydration={() => careService.addHydrationGlass()}
+            />
+          </div>
 
-        {/* Right Column (approx 35% width): Alexa+ MCP Simulator */}
-        <div className="lg:w-[35%] w-full flex flex-col">
-          <AlexaMcpSimulator
-            voiceState={voiceState}
-            activeTool={activeTool}
-            chatMessages={chatMessages}
-            mcpFrames={state.mcp_telemetry_log}
-            onSendMessage={handleSendMessage}
-            onScenarioTrigger={handleScenarioTrigger}
-          />
-        </div>
-      </main>
+          {/* Right Column (approx 35% width): Alexa+ MCP Simulator */}
+          <div className="lg:w-[35%] w-full flex flex-col">
+            <AlexaMcpSimulator
+              voiceState={voiceState}
+              activeTool={activeTool}
+              chatMessages={chatMessages}
+              mcpFrames={state.mcp_telemetry_log}
+              onSendMessage={handleSendMessage}
+              onScenarioTrigger={handleScenarioTrigger}
+            />
+          </div>
+        </main>
+      )}
 
       {/* Slide-In Caregiver iPhone Push Alert Notification */}
       <CaregiverPhoneToast

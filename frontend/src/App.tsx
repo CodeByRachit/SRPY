@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CareSystemState, AgentVoiceState, CareAlert, MedicationItem, ChatMessage } from './types/care';
+import { CareSystemState, AgentVoiceState, CareAlert, ChatMessage } from './types/care';
 import { careService } from './services/careService';
 import { soundEngine } from './utils/soundEngine';
 import { CaregiverDashboard } from './components/CaregiverDashboard';
@@ -15,6 +15,7 @@ import {
   VolumeX,
   Radio,
   Layers,
+  Dice5,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -24,7 +25,7 @@ export const App: React.FC = () => {
     return saved === 'dark' ? 'dark' : 'light';
   });
 
-  // Care System State (Connected to backend & WebSocket)
+  // Care System State (Connected directly to backend & WebSocket)
   const [state, setState] = useState<CareSystemState>(careService.getState());
   const [voiceState, setVoiceState] = useState<AgentVoiceState>(careService.getVoiceState());
   const [activeTool, setActiveTool] = useState<string | null>(null);
@@ -36,9 +37,9 @@ export const App: React.FC = () => {
   const [isAutoDemoRunning, setIsAutoDemoRunning] = useState<boolean>(false);
   const [autoDemoStep, setAutoDemoStep] = useState<number>(0);
   const [autoDemoStory, setAutoDemoStory] = useState<string>('');
-  const [autoDemoTimeRemaining, setAutoDemoTimeRemaining] = useState<number>(90);
-  const autoDemoTimerRef = useRef<any>(null);
+  const [autoDemoTimeRemaining, setAutoDemoTimeRemaining] = useState<number>(75);
   const autoDemoCountdownRef = useRef<any>(null);
+  const cancelDemoRef = useRef<boolean>(false);
 
   // Sync theme with HTML class
   useEffect(() => {
@@ -96,7 +97,7 @@ export const App: React.FC = () => {
   };
 
   const handleSendMessage = (msg: string) => {
-    careService.handleAgentUtterance(msg);
+    careService.sendVoiceCommand(msg);
   };
 
   const handleScenarioTrigger = (
@@ -104,36 +105,65 @@ export const App: React.FC = () => {
   ) => {
     switch (key) {
       case 'LOG_ELIQUIS':
-        careService.sendVoiceCommand('Alexa, I just took my afternoon Eliquis pill with a glass of water', 'LOG_ELIQUIS');
+        careService.sendVoiceCommand(
+          'Alexa, I just took my afternoon Eliquis pill with a glass of water',
+          'LOG_ELIQUIS'
+        );
         break;
       case 'GET_SCHEDULE':
         careService.sendVoiceCommand("Alexa, what's my care schedule for today?", 'GET_SCHEDULE');
         break;
       case 'MISSED_CHECKIN_ESCALATION':
-        careService.sendVoiceCommand("Alexa, Eleanor did not respond to the living room check-in chime!", 'MISSED_CHECKIN_ESCALATION');
+        careService.sendVoiceCommand(
+          'Alexa, Eleanor did not respond to the living room check-in chime!',
+          'MISSED_CHECKIN_ESCALATION'
+        );
         break;
       case 'ADD_APPOINTMENT':
-        careService.sendVoiceCommand('Alexa, schedule an eye exam with Dr. Priya Patel for tomorrow at 2:00 PM', 'ADD_APPOINTMENT');
+        careService.sendVoiceCommand(
+          'Alexa, schedule an eye exam with Dr. Priya Patel for tomorrow at 2:00 PM',
+          'ADD_APPOINTMENT'
+        );
         break;
     }
   };
 
-  const handleResetDemo = () => {
-    stopAutoDemo();
-    careService.resetDemo();
-    setActiveToastAlert(null);
-  };
-
-  // 90-Second Choreographed Judge Auto-Demo Director
   const stopAutoDemo = useCallback(() => {
+    cancelDemoRef.current = true;
     setIsAutoDemoRunning(false);
     setAutoDemoStep(0);
     setAutoDemoStory('');
-    if (autoDemoTimerRef.current) clearTimeout(autoDemoTimerRef.current);
     if (autoDemoCountdownRef.current) clearInterval(autoDemoCountdownRef.current);
   }, []);
 
-  const runAutoDemoSequence = useCallback(() => {
+  const handleResetDemo = () => {
+    stopAutoDemo();
+    careService.resetBackendState();
+    setActiveToastAlert(null);
+  };
+
+  const handleRandomizeScenario = () => {
+    stopAutoDemo();
+    careService.randomizeBackendState();
+  };
+
+  // Helper function to synthesize speech and wait for Alexa+'s reply
+  const speakAndWait = (text: string): Promise<void> => {
+    return new Promise((resolve) => {
+      if (soundEngine.getIsMuted() || !text) {
+        setTimeout(resolve, 2000);
+        return;
+      }
+      soundEngine.speak(text, {
+        onEnd: () => setTimeout(resolve, 800),
+        onError: () => setTimeout(resolve, 1500),
+      });
+    });
+  };
+
+  // 90-Second Backend-Driven Judge Auto-Demo Director (Steps 1..4 on Python Backend)
+  const runAutoDemoSequence = useCallback(async () => {
+    cancelDemoRef.current = false;
     setIsAutoDemoRunning(true);
     setAutoDemoTimeRemaining(75);
 
@@ -147,57 +177,34 @@ export const App: React.FC = () => {
       });
     }, 1000);
 
-    // Step 1: Baseline inspection
-    setAutoDemoStep(1);
-    setAutoDemoStory(
-      'Scene 1/4: Evelyn Carter (Age 82). Afternoon meds scheduled for 2:00 PM. Notice the 3D pill tile, Safe & Active status, and live heart rate monitor.'
-    );
+    const stepStories = [
+      'Scene 1/4: Alexa+ checks Eleanor’s schedule via get_today_schedule & flags overdue Eliquis 5mg.',
+      'Scene 2/4: Eleanor confirms taking Eliquis; log_medication_taken clears alert & updates adherence to 75%!',
+      'Scene 3/4: Voice Care Scheduling: Eleanor schedules an eye exam via MCP add_appointment.',
+      'Scene 4/4: Emergency Watchdog: Proactive check-in detected no reply; check_in_status escalates patient to CRITICAL and alerts Maya.',
+    ];
 
-    // Step 2: Log Afternoon Dose via MCP
-    autoDemoTimerRef.current = setTimeout(() => {
-      setAutoDemoStep(2);
-      setAutoDemoStory(
-        'Scene 2/4: Evelyn speaks: "Alexa, I just took my afternoon Eliquis pill". MCP log_medication_taken executes. Afternoon meds turn [Done], and Sarah is notified!'
-      );
-      careService.sendVoiceCommand('Alexa, I just took my afternoon Eliquis pill with a glass of water', 'LOG_ELIQUIS');
+    for (let step = 1; step <= 4; step++) {
+      if (cancelDemoRef.current) break;
+      setAutoDemoStep(step);
+      setAutoDemoStory(stepStories[step - 1]);
 
-      // Step 3: Book Doctor Appointment
-      autoDemoTimerRef.current = setTimeout(() => {
-        setAutoDemoStep(3);
-        setAutoDemoStory(
-          'Scene 3/4: Voice Care Coordination: Evelyn asks Alexa+ to schedule a retinal exam. MCP add_appointment updates her daily schedule in real time.'
-        );
-        careService.sendVoiceCommand(
-          'Alexa, could you schedule an eye exam with Dr. Priya Patel for tomorrow at 2:00 PM?',
-          'ADD_APPOINTMENT'
-        );
+      const res = await careService.runBackendDemoStep(step);
+      if (cancelDemoRef.current) break;
 
-        // Step 4: Wellness Alert & Safe Resolution
-        autoDemoTimerRef.current = setTimeout(() => {
-          setAutoDemoStep(4);
-          setAutoDemoStory(
-            'Scene 4/4: Emergency Guardian Escalate: Living room check-in chime unacknowledged. MCP check_in_status triggers Family Alert notification to Sarah.'
-          );
-          careService.sendVoiceCommand(
-            'Alexa, Eleanor has not responded to the proactive living room check-in prompt!',
-            'MISSED_CHECKIN_ESCALATION'
-          );
+      if (res.reply) {
+        await speakAndWait(res.reply);
+      }
+      if (cancelDemoRef.current) break;
 
-          // Resolution
-          autoDemoTimerRef.current = setTimeout(() => {
-            setAutoDemoStory(
-              'Resolution: Evelyn checks in verbally ("I\'m okay, just stepped out for fresh air"). Status resets back to Safe & Active.'
-            );
-            careService.sendVoiceCommand("Alexa, I'm okay now, just stepped outside for fresh air");
+      await new Promise((r) => setTimeout(r, 1200));
+    }
 
-            autoDemoTimerRef.current = setTimeout(() => {
-              stopAutoDemo();
-            }, 14000);
-          }, 18000);
-        }, 18000);
-      }, 16000);
-    }, 4000);
-  }, [stopAutoDemo]);
+    setIsAutoDemoRunning(false);
+    setAutoDemoStep(0);
+    setAutoDemoStory('');
+    if (autoDemoCountdownRef.current) clearInterval(autoDemoCountdownRef.current);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#F3F2EE] dark:bg-[#0B0F19] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-400 selection:bg-cyan-500/30 selection:text-cyan-900 p-2 sm:p-4 md:p-6 justify-center items-center">
@@ -211,20 +218,32 @@ export const App: React.FC = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-mono font-semibold shadow-sm">
-            <Radio className="w-3 h-3 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+          <div
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-mono font-semibold shadow-sm transition-colors ${
+              careService.getIsLiveBackend()
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'
+            }`}
+          >
+            <Radio
+              className={`w-3 h-3 ${
+                careService.getIsLiveBackend()
+                  ? 'text-emerald-600 dark:text-emerald-400 animate-pulse'
+                  : 'text-amber-600 dark:text-amber-400 animate-ping'
+              }`}
+            />
             <span>
-              {careService.getIsLiveBackend() ? 'LIVE BACKEND WS :8000' : 'CLIENT MCP ENGINE'}
+              {careService.getIsLiveBackend() ? 'LIVE BACKEND WS :8000' : 'CONNECTING TO BACKEND :8000'}
             </span>
           </div>
 
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-800 dark:text-indigo-300 text-[11px] font-mono">
             <Layers className="w-3 h-3 text-indigo-500" />
-            <span>MCP Spec 2025-11-25</span>
+            <span>MCP Spec 2025-11-25 • Streamable HTTP</span>
           </div>
         </div>
 
-        {/* Action Buttons: 90s Judge Auto-Demo, Audio Synthesizer, Reset, Theme */}
+        {/* Action Buttons: 90s Judge Auto-Demo, Randomize Scenario, Reset, Audio, Theme */}
         <div className="flex items-center gap-2">
           {/* Audio Synthesizer Toggle */}
           <button
@@ -247,6 +266,16 @@ export const App: React.FC = () => {
                 <span className="hidden sm:inline">Sound ON</span>
               </>
             )}
+          </button>
+
+          {/* New Backend Scenario Button */}
+          <button
+            onClick={handleRandomizeScenario}
+            className="tactile-pill px-3 py-1.5 rounded-xl text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-600/50 text-xs font-semibold flex items-center gap-1.5 hover:bg-purple-50 dark:hover:bg-purple-950/50 transition-all shadow-sm"
+            title="Generate fresh eldercare scenario dynamically on Python backend"
+          >
+            <Dice5 className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+            <span className="hidden sm:inline">🎲 New Scenario</span>
           </button>
 
           {/* 90-Second Judge Auto-Demo Director CTA */}
@@ -277,7 +306,7 @@ export const App: React.FC = () => {
           <button
             onClick={handleResetDemo}
             className="tactile-pill px-3 py-1.5 rounded-xl text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5"
-            title="Reset to initial state"
+            title="Reset to initial seed state"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Reset</span>
@@ -308,14 +337,16 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* 2. THE MASTER GLASS SLAB (Exact match to Reference Image) */}
+      {/* 2. THE MASTER GLASS SLAB */}
       <main className="max-w-[1340px] w-full glass-slab p-3 sm:p-4.5 flex flex-col lg:flex-row items-stretch gap-4 min-h-[660px]">
         {/* Left Column (approx 65% width): Caregiver Dashboard */}
         <div className="lg:w-[65%] w-full flex flex-col">
           <CaregiverDashboard
             state={state}
             activeTool={activeTool}
-            onLogMedication={(medId) => careService.logMedicationTaken(medId, 'Logged via Caregiver Portal')}
+            onLogMedication={(medId) =>
+              careService.callMcpToolDirect('log_medication_taken', { medication_id: medId })
+            }
             onAddHydration={() => careService.addHydrationGlass()}
           />
         </div>

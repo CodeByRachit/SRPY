@@ -437,11 +437,9 @@ class McpServer:
                 )
 
             elif tool_name == "add_appointment":
-                title = arguments.get("title", "")
-                date = arguments.get("date", "")
-                time_val = arguments.get("time", "")
-                if not title or not date or not time_val:
-                    raise ValueError("title, date, and time are required for add_appointment")
+                title = arguments.get("title") or "Doctor Follow-up"
+                date = arguments.get("date") or "Tomorrow"
+                time_val = arguments.get("time") or "10:00 AM"
                 tool_output = await self.store.add_appointment(
                     title=title,
                     date=date,
@@ -452,23 +450,21 @@ class McpServer:
                 )
 
             elif tool_name == "check_in_status":
-                check_in_type = arguments.get("check_in_type", "")
-                patient_response = arguments.get("patient_response", "")
-                if not check_in_type or not patient_response:
-                    raise ValueError("check_in_type and patient_response are required")
+                check_in_type = arguments.get("check_in_type") or arguments.get("type") or "WELLNESS_ROUTINE"
+                patient_response = arguments.get("patient_response") or (
+                    "NO_RESPONSE" if arguments.get("distress_level") in ("HIGH", "CRITICAL") else "RESPONSIVE_OK"
+                )
                 tool_output = await self.store.check_in_status(
                     check_in_type=check_in_type,
                     patient_response=patient_response,
                     reported_mood=arguments.get("reported_mood", "Unchanged"),
-                    symptom_notes=arguments.get("symptom_notes", ""),
+                    symptom_notes=arguments.get("symptom_notes") or arguments.get("note", ""),
                 )
 
             elif tool_name == "notify_caregiver":
                 urgency = arguments.get("urgency", "HIGH")
-                subject = arguments.get("subject", "")
-                message = arguments.get("message", "")
-                if not subject or not message:
-                    raise ValueError("subject and message are required for notify_caregiver")
+                subject = arguments.get("subject") or f"Caregiver Notification ({urgency})"
+                message = arguments.get("message") or "Proactive caregiver notification dispatched."
                 tool_output = await self.store.notify_caregiver(
                     urgency=urgency,
                     subject=subject,

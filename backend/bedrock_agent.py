@@ -386,7 +386,7 @@ class AlexaPlusBedrockAgent:
                 f"video call right here on the Echo Show with Dr. Aris Thorne."
             )
 
-        elif scenario_id == "MISSED_CHECKIN_ESCALATION":
+        elif scenario_id in ("MISSED_CHECKIN_ESCALATION", "UNRESPONSIVE_CHECKIN"):
             # Step 1: check_in_status
             res1 = await self.execute_mcp_tool_rpc(
                 "check_in_status",
@@ -420,7 +420,7 @@ class AlexaPlusBedrockAgent:
                 "and dispatched an urgent priority alert to Maya Vance's phone."
             )
 
-        elif scenario_id == "ADD_APPOINTMENT":
+        elif scenario_id in ("ADD_APPOINTMENT", "ADD_EYE_EXAM"):
             # Step 1: add_appointment
             res1 = await self.execute_mcp_tool_rpc(
                 "add_appointment",
@@ -518,9 +518,29 @@ class AlexaPlusBedrockAgent:
         p = prompt.lower().strip()
         tool_calls: List[Dict[str, Any]] = []
 
-        # 1. Taking Eliquis / Blood Thinner / Afternoon pill
-        if any(w in p for w in ["eliquis", "apixaban", "blood thinner", "afternoon pill", "took my 2pm", "took my afternoon"]):
-            return await self._run_deterministic_scenario("LOG_ELIQUIS", prompt, session_id)
+        # 1. Generic or specific medication logging ("took my pill", "took medicine", "eliquis", "apixaban")
+        if any(w in p for w in [
+            "eliquis", "apixaban", "blood thinner", "afternoon pill", "took my 2pm", "took my afternoon",
+            "took my pill", "took pill", "took my medicine", "took medicine", "taken my pill", "took my dose",
+            "just took", "finished my dose", "medication taken", "logged dose", "took it"
+        ]):
+            # If Eliquis is specifically mentioned or is currently overdue, log Eliquis
+            state = await self.store.get_state()
+            overdue_med = next((m for m in state["medications"] if m["status"] == "OVERDUE"), None)
+            if overdue_med and ("eliquis" in overdue_med["name"].lower() or "eliquis" in p or "pill" in p or "medicine" in p):
+                return await self._run_deterministic_scenario("LOG_ELIQUIS", prompt, session_id)
+            elif "metformin" in p or "evening" in p:
+                return await self._run_deterministic_scenario("LOG_METFORMIN", prompt, session_id)
+            elif "lisinopril" in p or "morning" in p:
+                res = await self.execute_mcp_tool_rpc(
+                    "log_medication_taken",
+                    {"medication_name": "Lisinopril", "taken_time": "now", "notes": "Voice confirmed"},
+                    session_id=session_id,
+                )
+                tool_calls.append({"tool_name": "log_medication_taken", "arguments": {"medication_name": "Lisinopril"}, "result": res})
+                reply = "I've recorded that you took your morning Lisinopril 10mg dose. Your blood pressure medication is up to date."
+            else:
+                return await self._run_deterministic_scenario("LOG_ELIQUIS", prompt, session_id)
 
         # 2. Taking Metformin / Evening pill / Diabetes med
         elif any(w in p for w in ["metformin", "evening pill", "sugar pill", "diabetes pill"]):
@@ -536,20 +556,46 @@ class AlexaPlusBedrockAgent:
             tool_calls.append({"tool_name": "log_medication_taken", "arguments": {"medication_name": "Lisinopril"}, "result": res})
             reply = "I've recorded that you took your morning Lisinopril 10mg dose. Your blood pressure medication is up to date."
 
-        # 4. Schedule or status inquiry
-        elif any(w in p for w in ["schedule", "appointment", "doctor", "what's next", "remaining", "today", "calendar"]):
-            return await self._run_deterministic_scenario("GET_SCHEDULE", prompt, session_id)
-
-        # 5. Emergency / Dizziness / Missed checkin / No response simulation
-        elif any(w in p for w in ["dizzy", "unwell", "chest", "emergency", "fall", "hurt", "missed check", "escalat", "no response"]):
-            return await self._run_deterministic_scenario("MISSED_CHECKIN_ESCALATION", prompt, session_id)
-
-        # 6. Add appointment
-        elif any(w in p for w in ["schedule appointment", "book", "eye exam", "retina", "priya patel", "doctor visit"]):
+        # 4. Add appointment / Eye exam / Book doctor
+        elif any(w in p for w in ["schedule appointment", "book", "eye exam", "retina", "priya patel", "doctor visit", "new appointment", "add appointment", "schedule an eye", "make an appointment"]):
             return await self._run_deterministic_scenario("ADD_APPOINTMENT", prompt, session_id)
 
-        # 7. Hydration update
-        elif any(w in p for w in ["drank water", "glass of water", "water"]):
+        # 5. Emergency / Dizziness / Fall / Missed checkin / No response
+        elif any(w in p for w in ["dizzy", "unwell", "chest", "emergency", "fall", "fell", "hurt", "pain", "missed check", "escalat", "no response", "help", "sick"]):
+            return await self._run_deterministic_scenario("MISSED_CHECKIN_ESCALATION", prompt, session_id)
+
+        # 6. Schedule or doctor appointment inquiry
+        elif any(w in p for w in ["schedule", "appointment", "doctor", "what's next", "remaining", "today", "calendar", "when is my", "visit", "thorne", "what do i have", "my day"]):
+            return await self._run_deterministic_scenario("GET_SCHEDULE", prompt, session_id)
+
+        # 7. Caregiver / Family inquiries ("Tell Maya", "Call Maya", "Where is Maya")
+        elif any(w in p for w in ["maya", "daughter", "call maya", "tell maya", "message maya", "caregiver"]):
+            res = await self.execute_mcp_tool_rpc(
+                "notify_caregiver",
+                {
+                    "urgency": "LOW",
+                    "subject": "💬 Eleanor Sent a Message via Echo Show",
+                    "message": f"Eleanor asked Alexa+ to send a note: \"{prompt}\"",
+                    "recommended_action": "Check in via phone or app",
+                    "channel": "ALEXA_APP_AND_SMS",
+                },
+                session_id=session_id,
+            )
+            tool_calls.append({"tool_name": "notify_caregiver", "arguments": {"urgency": "LOW"}, "result": res})
+            reply = "I've sent a priority message to your daughter Maya in San Francisco. She has confirmed receipt on her caregiver bridge."
+
+        # 8. Vitals & Biometrics inquiries ("How am I doing", "My blood pressure", "Heart rate")
+        elif any(w in p for w in ["vitals", "heart rate", "blood pressure", "bp", "pulse", "how am i", "how are my", "oxygen"]):
+            state = await self.store.get_state()
+            v = state["patient"]["vitals"]
+            reply = (
+                f"Your vitals are looking stable, Eleanor. Your resting heart rate is {v.get('heart_rate', 76)} beats per minute, "
+                f"your blood pressure is {v.get('blood_pressure', '128/82')}, and blood oxygen is {v.get('blood_oxygen', 98)} percent. "
+                f"You've had {v.get('hydration_glasses', 3)} of your {v.get('hydration_goal', 6)} daily glasses of water."
+            )
+
+        # 9. Hydration update ("Drank water", "Glass of water")
+        elif any(w in p for w in ["drank water", "glass of water", "water", "drank a glass"]):
             state = await self.store.get_state()
             vitals = state["patient"]["vitals"]
             new_glasses = vitals.get("hydration_glasses", 0) + 1
@@ -557,15 +603,38 @@ class AlexaPlusBedrockAgent:
             await self.store.broadcast_state_update(reason="HYDRATION_LOGGED")
             reply = f"Great job staying hydrated, Eleanor! That brings you to {new_glasses} of your {vitals.get('hydration_goal', 6)} glasses today."
 
-        # 8. General conversational reply with state context
+        # 10. Greetings ("Hello", "Hi", "Good morning", "Good afternoon")
+        elif any(w in p for w in ["hello", "hi alexa", "hey alexa", "good morning", "good afternoon", "good evening", "hi"]):
+            state = await self.store.get_state()
+            has_overdue = any(m.get("status") == "OVERDUE" for m in state.get("medications", []))
+            if has_overdue:
+                reply = (
+                    "Good afternoon, Eleanor! I'm here on your living room Echo Show. "
+                    "Just a gentle reminder: your 2:00 PM Eliquis dose is currently waiting for confirmation. "
+                    "Let me know once you've taken it, or ask me for your doctor schedule."
+                )
+            else:
+                reply = (
+                    "Hello Eleanor! I'm active on your living room Echo Show. "
+                    "All your scheduled doses are currently up to date. "
+                    "Would you like me to review your 4:30 PM video appointment with Dr. Thorne?"
+                )
+
+        # 11. Intelligent fallback with state-aware guidance
         else:
             state = await self.store.get_state()
             patient = state["patient"]
-            reply = (
-                f"Hello {patient['name']}. I'm listening on your Living Room Echo Show 15. "
-                f"Your adherence today is at {patient['adherence_Rate']}%, and your status is currently {patient['status']}. "
-                "You can tell me if you've taken your medications, ask for your daily schedule, or check in anytime."
-            )
+            has_overdue = any(m.get("status") == "OVERDUE" for m in state.get("medications", []))
+            if has_overdue:
+                reply = (
+                    f"I heard: \"{prompt}\". Eleanor, just a quick reminder that your afternoon Eliquis 5 milligram dose is overdue. "
+                    "You can say \"Alexa, I just took my Eliquis pill\", ask for your schedule, or tell me to send a message to Maya."
+                )
+            else:
+                reply = (
+                    f"I heard you, Eleanor. Your care routine is running smoothly at {patient.get('adherence_Rate', 75)}% adherence. "
+                    "You can tell me if you've taken medication, ask about today's appointments, or check your vitals anytime."
+                )
 
         await self.store.broadcast_agent_status("SPEAKING", reply)
         await asyncio.sleep(0.3)

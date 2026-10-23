@@ -89,11 +89,7 @@ export const IntroPage: React.FC<IntroPageProps> = ({
 
         {/* Main Headline */}
         <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black tracking-tight text-slate-900 dark:text-white max-w-4xl leading-[1.12] mb-4">
-          Ambient Caregiving,{' '}
-          <span className="bg-gradient-to-r from-cyan-600 via-indigo-600 to-rose-600 dark:from-cyan-400 dark:via-indigo-400 dark:to-rose-400 bg-clip-text text-transparent">
-            Reimagined for Independent Seniors
-          </span>{' '}
-          &amp; Distant Families.
+          Ambient Caregiving, Reimagined for Independent Seniors Distant Families.
         </h1>
 
         {/* Subtitle */}
@@ -402,11 +398,10 @@ export const IntroPage: React.FC<IntroPageProps> = ({
             <button
               key={t.name}
               onClick={() => setSelectedToolTab(t.name)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
-                selectedToolTab === t.name
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${selectedToolTab === t.name
                   ? 'bg-slate-900 text-white dark:bg-cyan-500 dark:text-slate-950 shadow-md'
                   : 'bg-white/60 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
-              }`}
+                }`}
             >
               {t.name}()
             </button>

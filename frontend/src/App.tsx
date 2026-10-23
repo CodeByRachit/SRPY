@@ -1,27 +1,30 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { CareSystemState, AgentVoiceState, CareAlert, MedicationItem, ChatMessage, DemoStatus } from './types/care';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { CareSystemState, AgentVoiceState, CareAlert, MedicationItem, ChatMessage } from './types/care';
 import { careService } from './services/careService';
 import { soundEngine } from './utils/soundEngine';
-import { TopCommandBar } from './components/TopCommandBar';
-import { EditorialNavBar, NavView } from './components/EditorialNavBar';
-import { Alexa3DCanvas } from './components/Alexa3DCanvas';
-import { VoiceSimulatorPanel } from './components/VoiceSimulatorPanel';
 import { CaregiverDashboard } from './components/CaregiverDashboard';
+import { AlexaMcpSimulator } from './components/AlexaMcpSimulator';
 import { CaregiverPhoneToast } from './components/CaregiverPhoneToast';
-import { McpProtocolInspector } from './components/McpProtocolInspector';
-import { Sparkles, X, Heart, Activity, Droplets, ShieldCheck } from 'lucide-react';
+import { CuteThemeToggle } from './components/CuteThemeToggle';
+import {
+  X,
+  Play,
+  Pause,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+  Radio,
+  Layers,
+} from 'lucide-react';
 
 export const App: React.FC = () => {
-  // Theme State
+  // Theme State - Default to Warm Spatial Light Theme
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('auracare_theme');
-    return saved === 'light' ? 'light' : 'dark';
+    return saved === 'dark' ? 'dark' : 'light';
   });
 
-  // Navigation State
-  const [currentView, setCurrentView] = useState<NavView>('SPATIAL_HUB');
-
-  // Single Source of Truth Care State
+  // Care System State (Connected to backend & WebSocket)
   const [state, setState] = useState<CareSystemState>(careService.getState());
   const [voiceState, setVoiceState] = useState<AgentVoiceState>(careService.getVoiceState());
   const [activeTool, setActiveTool] = useState<string | null>(null);
@@ -29,11 +32,13 @@ export const App: React.FC = () => {
   const [activeToastAlert, setActiveToastAlert] = useState<CareAlert | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(soundEngine.getIsMuted());
 
-  // Judge Demo Runner State
-  const [isJudgeDemoRunning, setIsJudgeDemoRunning] = useState<boolean>(false);
-  const [judgeDemoStep, setJudgeDemoStep] = useState<number>(0);
-  const [judgeDemoStory, setJudgeDemoStory] = useState<string>('');
-  const cancelDemoRef = useRef<boolean>(false);
+  // Auto-Demo Director state
+  const [isAutoDemoRunning, setIsAutoDemoRunning] = useState<boolean>(false);
+  const [autoDemoStep, setAutoDemoStep] = useState<number>(0);
+  const [autoDemoStory, setAutoDemoStory] = useState<string>('');
+  const [autoDemoTimeRemaining, setAutoDemoTimeRemaining] = useState<number>(90);
+  const autoDemoTimerRef = useRef<any>(null);
+  const autoDemoCountdownRef = useRef<any>(null);
 
   // Sync theme with HTML class
   useEffect(() => {
@@ -48,7 +53,7 @@ export const App: React.FC = () => {
     localStorage.setItem('auracare_theme', theme);
   }, [theme]);
 
-  // Keyboard shortcuts (T for theme, 1-4 for views)
+  // Keyboard shortcut: T for theme toggle
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
@@ -56,14 +61,6 @@ export const App: React.FC = () => {
       }
       if (e.key === 't' || e.key === 'T') {
         handleToggleTheme();
-      } else if (e.key === '1') {
-        setCurrentView('SPATIAL_HUB');
-      } else if (e.key === '2') {
-        setCurrentView('CAREGIVER_BRIDGE');
-      } else if (e.key === '3') {
-        setCurrentView('MCP_LAB');
-      } else if (e.key === '4') {
-        setCurrentView('DUAL_STAGE');
       }
     };
 
@@ -71,7 +68,7 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [theme]);
 
-  // Subscribe to CareService backend updates
+  // Subscribe to careService backend updates
   useEffect(() => {
     const unsubState = careService.subscribe((newState) => setState(newState));
     const unsubVoice = careService.subscribeVoiceState((newVs) => setVoiceState(newVs));
@@ -88,7 +85,7 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // --- Handlers ---
+  // Handlers
   const handleToggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
@@ -99,332 +96,241 @@ export const App: React.FC = () => {
   };
 
   const handleSendMessage = (msg: string) => {
-    careService.sendVoiceCommand(msg);
-  };
-
-  const handlePillClick = (med: MedicationItem) => {
-    careService.sendVoiceCommand(`Alexa, I just took my ${med.name} ${med.dosage} pill with water`);
+    careService.handleAgentUtterance(msg);
   };
 
   const handleScenarioTrigger = (
-    key: 'LOG_ELIQUIS' | 'CHECK_SCHEDULE' | 'ESCALATE_CHECKIN' | 'BOOK_APPOINTMENT'
+    key: 'LOG_ELIQUIS' | 'GET_SCHEDULE' | 'MISSED_CHECKIN_ESCALATION' | 'ADD_APPOINTMENT'
   ) => {
     switch (key) {
       case 'LOG_ELIQUIS':
-        careService.sendVoiceCommand(
-          'Alexa, I just took my afternoon Eliquis pill with a glass of water',
-          'LOG_ELIQUIS'
-        );
+        careService.sendVoiceCommand('Alexa, I just took my afternoon Eliquis pill with a glass of water', 'LOG_ELIQUIS');
         break;
-      case 'CHECK_SCHEDULE':
-        careService.sendVoiceCommand(
-          "Alexa, what's my medication and doctor schedule today?",
-          'GET_SCHEDULE'
-        );
+      case 'GET_SCHEDULE':
+        careService.sendVoiceCommand("Alexa, what's my care schedule for today?", 'GET_SCHEDULE');
         break;
-      case 'ESCALATE_CHECKIN':
-        careService.sendVoiceCommand(
-          "Alexa, Eleanor is having chest tightness and hasn't answered!",
-          'UNRESPONSIVE_CHECKIN'
-        );
+      case 'MISSED_CHECKIN_ESCALATION':
+        careService.sendVoiceCommand("Alexa, Eleanor did not respond to the living room check-in chime!", 'MISSED_CHECKIN_ESCALATION');
         break;
-      case 'BOOK_APPOINTMENT':
-        careService.sendVoiceCommand(
-          'Alexa, schedule an eye exam with Dr. Priya Patel for tomorrow at 2:00 PM',
-          'ADD_EYE_EXAM'
-        );
+      case 'ADD_APPOINTMENT':
+        careService.sendVoiceCommand('Alexa, schedule an eye exam with Dr. Priya Patel for tomorrow at 2:00 PM', 'ADD_APPOINTMENT');
         break;
     }
   };
 
-  const handleDirectMcpInvoke = async (toolName: string, args: Record<string, unknown>) => {
-    await careService.callMcpToolDirect(toolName, args);
-  };
-
-  const handleResetDemo = async () => {
-    cancelDemoRef.current = true;
-    setIsJudgeDemoRunning(false);
-    setJudgeDemoStep(0);
+  const handleResetDemo = () => {
+    stopAutoDemo();
+    careService.resetDemo();
     setActiveToastAlert(null);
-    await careService.resetBackendState();
   };
 
-  const handleRandomizeScenario = async () => {
-    cancelDemoRef.current = true;
-    setIsJudgeDemoRunning(false);
-    setJudgeDemoStep(0);
-    await careService.randomizeBackendState();
-  };
+  // 90-Second Choreographed Judge Auto-Demo Director
+  const stopAutoDemo = useCallback(() => {
+    setIsAutoDemoRunning(false);
+    setAutoDemoStep(0);
+    setAutoDemoStory('');
+    if (autoDemoTimerRef.current) clearTimeout(autoDemoTimerRef.current);
+    if (autoDemoCountdownRef.current) clearInterval(autoDemoCountdownRef.current);
+  }, []);
 
-  // Helper function to synthesize speech and wait for utterance to finish
-  const speakAndWait = (text: string): Promise<void> => {
-    return new Promise((resolve) => {
-      if (soundEngine.getIsMuted() || !text) {
-        setTimeout(resolve, 2000);
-        return;
-      }
-      soundEngine.speak(text, {
-        onEnd: () => setTimeout(resolve, 800),
-        onError: () => setTimeout(resolve, 1500),
+  const runAutoDemoSequence = useCallback(() => {
+    setIsAutoDemoRunning(true);
+    setAutoDemoTimeRemaining(75);
+
+    autoDemoCountdownRef.current = setInterval(() => {
+      setAutoDemoTimeRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(autoDemoCountdownRef.current);
+          return 0;
+        }
+        return prev - 1;
       });
-    });
-  };
+    }, 1000);
 
-  // 90-Second Judge Demo Orchestrator (Steps 1, 2, 3, 4 executed 100% on Backend)
-  const handleStartJudgeDemo = async () => {
-    cancelDemoRef.current = false;
-    setIsJudgeDemoRunning(true);
-    setCurrentView('DUAL_STAGE');
+    // Step 1: Baseline inspection
+    setAutoDemoStep(1);
+    setAutoDemoStory(
+      'Scene 1/4: Evelyn Carter (Age 82). Afternoon meds scheduled for 2:00 PM. Notice the 3D pill tile, Safe & Active status, and live heart rate monitor.'
+    );
 
-    const stepStories = [
-      'Step 1/4: Alexa+ checks Eleanor’s schedule via get_today_schedule & flags overdue Eliquis 5mg.',
-      'Step 2/4: Eleanor voice-confirms taking Eliquis; log_medication_taken clears alert & updates adherence to 75%.',
-      'Step 3/4: Eleanor schedules ophthalmology checkup; add_appointment updates calendar & notifies Maya.',
-      'Step 4/4: Check-in watchdog detects no answer; check_in_status escalates patient to CRITICAL and triggers alert.',
-    ];
+    // Step 2: Log Afternoon Dose via MCP
+    autoDemoTimerRef.current = setTimeout(() => {
+      setAutoDemoStep(2);
+      setAutoDemoStory(
+        'Scene 2/4: Evelyn speaks: "Alexa, I just took my afternoon Eliquis pill". MCP log_medication_taken executes. Afternoon meds turn [Done], and Sarah is notified!'
+      );
+      careService.sendVoiceCommand('Alexa, I just took my afternoon Eliquis pill with a glass of water', 'LOG_ELIQUIS');
 
-    for (let step = 1; step <= 4; step++) {
-      if (cancelDemoRef.current) break;
-      setJudgeDemoStep(step);
-      setJudgeDemoStory(stepStories[step - 1]);
+      // Step 3: Book Doctor Appointment
+      autoDemoTimerRef.current = setTimeout(() => {
+        setAutoDemoStep(3);
+        setAutoDemoStory(
+          'Scene 3/4: Voice Care Coordination: Evelyn asks Alexa+ to schedule a retinal exam. MCP add_appointment updates her daily schedule in real time.'
+        );
+        careService.sendVoiceCommand(
+          'Alexa, could you schedule an eye exam with Dr. Priya Patel for tomorrow at 2:00 PM?',
+          'ADD_APPOINTMENT'
+        );
 
-      const result = await careService.runBackendDemoStep(step);
-      if (cancelDemoRef.current) break;
+        // Step 4: Wellness Alert & Safe Resolution
+        autoDemoTimerRef.current = setTimeout(() => {
+          setAutoDemoStep(4);
+          setAutoDemoStory(
+            'Scene 4/4: Emergency Guardian Escalate: Living room check-in chime unacknowledged. MCP check_in_status triggers Family Alert notification to Sarah.'
+          );
+          careService.sendVoiceCommand(
+            'Alexa, Eleanor has not responded to the proactive living room check-in prompt!',
+            'MISSED_CHECKIN_ESCALATION'
+          );
 
-      if (result.reply) {
-        await speakAndWait(result.reply);
-      }
-      if (cancelDemoRef.current) break;
+          // Resolution
+          autoDemoTimerRef.current = setTimeout(() => {
+            setAutoDemoStory(
+              'Resolution: Evelyn checks in verbally ("I\'m okay, just stepped out for fresh air"). Status resets back to Safe & Active.'
+            );
+            careService.sendVoiceCommand("Alexa, I'm okay now, just stepped outside for fresh air");
 
-      // Rest interval between choreographed scenarios
-      await new Promise((r) => setTimeout(r, 1400));
-    }
-
-    setIsJudgeDemoRunning(false);
-    setJudgeDemoStep(0);
-    setJudgeDemoStory('');
-  };
-
-  const handlePauseJudgeDemo = () => {
-    cancelDemoRef.current = true;
-    setIsJudgeDemoRunning(false);
-    setJudgeDemoStep(0);
-    setJudgeDemoStory('');
-  };
-
-  const hasOverdueMed = state.medications.some((m) => m.status === 'OVERDUE');
+            autoDemoTimerRef.current = setTimeout(() => {
+              stopAutoDemo();
+            }, 14000);
+          }, 18000);
+        }, 18000);
+      }, 16000);
+    }, 4000);
+  }, [stopAutoDemo]);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-400 selection:bg-cyan-500/30 selection:text-cyan-900 dark:selection:text-cyan-200">
-      {/* Top Command Bar */}
-      <TopCommandBar
-        theme={theme}
-        isLiveBackend={careService.getIsLiveBackend()}
-        isAudioMuted={isAudioMuted}
-        isAutoDemoRunning={isJudgeDemoRunning}
-        autoDemoStep={judgeDemoStep}
-        totalDemoSteps={4}
-        autoDemoTimeRemaining={judgeDemoStep ? (5 - judgeDemoStep) * 15 : 0}
-        onToggleTheme={handleToggleTheme}
-        onToggleAudio={handleToggleAudio}
-        onStartAutoDemo={handleStartJudgeDemo}
-        onPauseAutoDemo={handlePauseJudgeDemo}
-        onResetDemo={handleResetDemo}
-        onRandomizeScenario={handleRandomizeScenario}
-      />
-
-      {/* Auto-Demo Live Narrative Banner */}
-      {isJudgeDemoRunning && (
-        <div className="w-full bg-gradient-to-r from-cyan-900/90 via-indigo-900/90 to-slate-900/90 border-b border-cyan-400/50 px-4 py-2 text-xs text-white flex items-center justify-between shadow-lg animate-pulse z-30">
+    <div className="min-h-screen bg-[#F3F2EE] dark:bg-[#0B0F19] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-400 selection:bg-cyan-500/30 selection:text-cyan-900 p-2 sm:p-4 md:p-6 justify-center items-center">
+      {/* 1. Floating Top Command Bar (Judge Controls & Status) */}
+      <div className="max-w-[1340px] w-full flex flex-wrap items-center justify-between gap-3 mb-3 px-2">
+        {/* Brand & Connection Pill */}
+        <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
-            <span className="font-semibold">{judgeDemoStory}</span>
+            <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
+              AuraCare <span className="text-cyan-600 font-light">Alexa+</span>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs font-mono font-semibold shadow-sm">
+            <Radio className="w-3 h-3 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+            <span>
+              {careService.getIsLiveBackend() ? 'LIVE BACKEND WS :8000' : 'CLIENT MCP ENGINE'}
+            </span>
+          </div>
+
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-800 dark:text-indigo-300 text-[11px] font-mono">
+            <Layers className="w-3 h-3 text-indigo-500" />
+            <span>MCP Spec 2025-11-25</span>
+          </div>
+        </div>
+
+        {/* Action Buttons: 90s Judge Auto-Demo, Audio Synthesizer, Reset, Theme */}
+        <div className="flex items-center gap-2">
+          {/* Audio Synthesizer Toggle */}
+          <button
+            onClick={handleToggleAudio}
+            className={`tactile-pill px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${
+              isAudioMuted
+                ? 'text-slate-400 hover:text-slate-600'
+                : 'text-cyan-800 dark:text-cyan-300 font-bold'
+            }`}
+            title={isAudioMuted ? 'Unmute Audio' : 'Mute Audio'}
+          >
+            {isAudioMuted ? (
+              <>
+                <VolumeX className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Muted</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-3.5 h-3.5 text-cyan-600 animate-pulse" />
+                <span className="hidden sm:inline">Sound ON</span>
+              </>
+            )}
+          </button>
+
+          {/* 90-Second Judge Auto-Demo Director CTA */}
+          <button
+            onClick={isAutoDemoRunning ? stopAutoDemo : runAutoDemoSequence}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 ${
+              isAutoDemoRunning
+                ? 'bg-amber-600 hover:bg-amber-500 text-white animate-pulse shadow-amber-600/30'
+                : 'bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-cyan-600/30 hover:-translate-y-0.5'
+            }`}
+          >
+            {isAutoDemoRunning ? (
+              <>
+                <Pause className="w-3.5 h-3.5 fill-current" />
+                <span>
+                  Demo ({autoDemoStep}/4) • {autoDemoTimeRemaining}s
+                </span>
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Play 90s Judge Demo</span>
+              </>
+            )}
+          </button>
+
+          {/* Reset Demo State Button */}
+          <button
+            onClick={handleResetDemo}
+            className="tactile-pill px-3 py-1.5 rounded-xl text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5"
+            title="Reset to initial state"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Reset</span>
+          </button>
+
+          {/* Cute Theme Toggle */}
+          <CuteThemeToggle theme={theme} onToggle={handleToggleTheme} />
+        </div>
+      </div>
+
+      {/* Auto-Demo Live Narrative Bar */}
+      {isAutoDemoRunning && (
+        <div className="max-w-[1340px] w-full glass-card border border-cyan-400/40 px-4 py-2 text-xs text-slate-800 dark:text-slate-100 flex items-center justify-between shadow-md mb-3 rounded-2xl animate-fade-in">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 font-mono font-bold text-[10px] shrink-0">
+              SCENE {autoDemoStep}/4
+            </span>
+            <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">
+              {autoDemoStory}
+            </span>
           </div>
           <button
-            onClick={handlePauseJudgeDemo}
-            className="text-slate-300 hover:text-white p-1 rounded-md transition-colors"
+            onClick={stopAutoDemo}
+            className="text-slate-400 hover:text-slate-700 p-1 rounded-md transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Editorial Pill Navigation Bar */}
-      <EditorialNavBar
-        currentView={currentView}
-        onSelectView={(v) => setCurrentView(v)}
-        hasOverdueMed={hasOverdueMed}
-        mcpFrameCount={state.mcp_telemetry_log.length}
-      />
+      {/* 2. THE MASTER GLASS SLAB (Exact match to Reference Image) */}
+      <main className="max-w-[1340px] w-full glass-slab p-3 sm:p-4.5 flex flex-col lg:flex-row items-stretch gap-4 min-h-[660px]">
+        {/* Left Column (approx 65% width): Caregiver Dashboard */}
+        <div className="lg:w-[65%] w-full flex flex-col">
+          <CaregiverDashboard
+            state={state}
+            activeTool={activeTool}
+            onLogMedication={(medId) => careService.logMedicationTaken(medId, 'Logged via Caregiver Portal')}
+            onAddHydration={() => careService.addHydrationGlass()}
+          />
+        </div>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-[1720px] w-full mx-auto p-4 sm:p-6 transition-all duration-300">
-        {/* VIEW 01: SPATIAL LIVING HUB */}
-        {currentView === 'SPATIAL_HUB' && (
-          <div className="flex flex-col gap-5 animate-fade-in">
-            {/* Quick Hero Banner with Living Room Context */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-white/70 dark:bg-slate-900/60 border border-slate-200/90 dark:border-slate-800 backdrop-blur-md shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono text-cyan-600 dark:text-cyan-400 px-2.5 py-1 rounded-full bg-cyan-50 dark:bg-cyan-950/80 border border-cyan-200 dark:border-cyan-800">
-                  CHAPTER 01 / LIVING ROOM
-                </span>
-                <div>
-                  <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                    Echo Show 15 Spatial Hub • Eleanor Vance ({state.patient.age || 78})
-                  </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Ambient voice recognition, morphing Three.js 3D AI orb, and smart medication orbital dispenser.
-                  </p>
-                </div>
-              </div>
-
-              {/* Vitals Telemetry Glance */}
-              <div className="flex items-center gap-4 text-xs">
-                <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                  <Heart className="w-4 h-4 text-rose-500 animate-pulse" />
-                  <span className="font-bold">{state.patient.vitals.heart_rate} BPM</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                  <Activity className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                  <span className="font-bold">{state.patient.vitals.blood_pressure}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                  <Droplets className="w-4 h-4 text-sky-500" />
-                  <span className="font-bold">
-                    {state.patient.vitals.hydration_glasses}/{state.patient.vitals.hydration_goal} glasses
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Expansive 2-Column Showcase */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-              {/* 3D Canvas Centerpiece (7 cols) */}
-              <div className="lg:col-span-7 h-[540px] w-full">
-                <Alexa3DCanvas
-                  state={state}
-                  voiceState={voiceState}
-                  activeTool={activeTool}
-                  theme={theme}
-                  onPillClick={handlePillClick}
-                />
-              </div>
-
-              {/* Voice Simulator & Scenario Panel (5 cols) */}
-              <div className="lg:col-span-5 h-[540px]">
-                <VoiceSimulatorPanel
-                  voiceState={voiceState}
-                  activeTool={activeTool}
-                  chatMessages={chatMessages}
-                  onSendMessage={handleSendMessage}
-                  onScenarioTrigger={handleScenarioTrigger}
-                  onSelectToolLog={() => setCurrentView('MCP_LAB')}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW 02: CAREGIVER COMMAND BRIDGE */}
-        {currentView === 'CAREGIVER_BRIDGE' && (
-          <div className="flex flex-col gap-4 animate-fade-in max-w-5xl mx-auto">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-mono text-cyan-600 dark:text-cyan-400 px-2.5 py-1 rounded-full bg-cyan-50 dark:bg-cyan-950/80 border border-cyan-200 dark:border-cyan-800">
-                CHAPTER 02 / REMOTE COMMAND
-              </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Synchronized live over WebSockets at &lt;10ms latency
-              </span>
-            </div>
-
-            <CaregiverDashboard
-              state={state}
-              onLogMedication={(medId) =>
-                careService.callMcpToolDirect('log_medication_taken', { medication_id: medId })
-              }
-              onAddHydration={() => careService.addHydrationGlass()}
-            />
-          </div>
-        )}
-
-        {/* VIEW 03: MCP PROTOCOL LAB */}
-        {currentView === 'MCP_LAB' && (
-          <div className="flex flex-col gap-4 animate-fade-in max-w-6xl mx-auto">
-            {/* Architectural Explanation Header */}
-            <div className="p-4 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm backdrop-blur-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800">
-                    CHAPTER 03 / MCP SPEC 2025-11-25
-                  </span>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Streamable HTTP JSON-RPC 2.0 Protocol Terminal
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Every voice query from Eleanor invokes real Model Context Protocol (MCP) tool frames. Inspect raw payloads, measure transport latency, or fire direct tool calls.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs font-mono px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-600 text-emerald-800 dark:text-emerald-300 font-bold flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>Spec Compliant</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Full-Height Protocol Inspector */}
-            <McpProtocolInspector
-              frames={state.mcp_telemetry_log}
-              onDirectInvoke={handleDirectMcpInvoke}
-              isFullView={true}
-            />
-          </div>
-        )}
-
-        {/* VIEW 04: DUAL STAGE */}
-        {currentView === 'DUAL_STAGE' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start animate-fade-in">
-            {/* Left Stage (5 cols): 3D Alexa+ Living Room Canvas + Voice Panel */}
-            <section className="lg:col-span-5 flex flex-col gap-4">
-              <div className="h-[430px] w-full">
-                <Alexa3DCanvas
-                  state={state}
-                  voiceState={voiceState}
-                  activeTool={activeTool}
-                  theme={theme}
-                  onPillClick={handlePillClick}
-                />
-              </div>
-
-              <VoiceSimulatorPanel
-                voiceState={voiceState}
-                activeTool={activeTool}
-                chatMessages={chatMessages}
-                onSendMessage={handleSendMessage}
-                onScenarioTrigger={handleScenarioTrigger}
-                onSelectToolLog={() => setCurrentView('MCP_LAB')}
-              />
-            </section>
-
-            {/* Right Stage (7 cols): Caregiver Dashboard + Docked MCP Inspector */}
-            <section className="lg:col-span-7 flex flex-col gap-4">
-              <CaregiverDashboard
-                state={state}
-                onLogMedication={(medId) =>
-                  careService.callMcpToolDirect('log_medication_taken', { medication_id: medId })
-                }
-                onAddHydration={() => careService.addHydrationGlass()}
-              />
-
-              <McpProtocolInspector
-                frames={state.mcp_telemetry_log}
-                onDirectInvoke={handleDirectMcpInvoke}
-              />
-            </section>
-          </div>
-        )}
+        {/* Right Column (approx 35% width): Alexa+ MCP Simulator */}
+        <div className="lg:w-[35%] w-full flex flex-col">
+          <AlexaMcpSimulator
+            voiceState={voiceState}
+            activeTool={activeTool}
+            chatMessages={chatMessages}
+            mcpFrames={state.mcp_telemetry_log}
+            onSendMessage={handleSendMessage}
+            onScenarioTrigger={handleScenarioTrigger}
+          />
+        </div>
       </main>
 
       {/* Slide-In Caregiver iPhone Push Alert Notification */}
@@ -434,22 +340,11 @@ export const App: React.FC = () => {
         onAcknowledge={(alertId) => careService.acknowledgeAlert(alertId)}
       />
 
-      {/* Editorial Footer */}
-      <footer className="w-full border-t border-slate-200/90 dark:border-slate-800/80 bg-white/50 dark:bg-[#060a12]/50 py-3 px-6 text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-3 transition-colors duration-400">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-slate-700 dark:text-slate-300">AuraCare</span>
-          <span>•</span>
-          <span>Amazon Developer Hackathon (Build, Ship, Shape)</span>
-        </div>
-        <div className="flex items-center gap-4 text-slate-500 font-mono text-[10px]">
-          <span>Three.js / WebGL</span>
-          <span>•</span>
-          <span>Web Audio &amp; Speech API</span>
-          <span>•</span>
-          <span>MCP Spec 2025-11-25</span>
-          <span>•</span>
-          <span className="text-cyan-600 dark:text-cyan-400">Press &apos;T&apos; to toggle theme</span>
-        </div>
+      {/* Subtle Bottom Credit */}
+      <footer className="mt-3 text-[11px] text-slate-400 dark:text-slate-500 flex items-center gap-3 font-mono">
+        <span>AuraCare • AWS Builder Hackathon (Alexa+ Track)</span>
+        <span>•</span>
+        <span>Press &apos;T&apos; to toggle theme</span>
       </footer>
     </div>
   );

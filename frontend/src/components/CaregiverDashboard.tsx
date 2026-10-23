@@ -3,417 +3,360 @@ import {
   CareSystemState,
   MedicationItem,
   AppointmentItem,
-  TimelineEvent,
-  PatientStatus,
 } from '../types/care';
 import {
-  Heart,
-  Activity,
-  Droplets,
-  Clock,
-  ShieldCheck,
-  AlertTriangle,
-  AlertOctagon,
+  Home,
   Calendar,
-  CheckCircle2,
-  MapPin,
-  Phone,
-  Plus,
-  Zap,
+  Activity,
+  Bell,
+  Settings,
+  SlidersHorizontal,
+  Check,
+  AlertTriangle,
+  Heart,
 } from 'lucide-react';
+import { Tactile3DPillCanvas, Tactile3DHouseCanvas } from './Alexa3DCanvas';
 
 interface CaregiverDashboardProps {
   state: CareSystemState;
-  onLogMedication: (medId: string) => void;
-  onAddHydration: () => void;
+  activeTool?: string | null;
+  onLogMedication?: (medId: string) => void;
+  onAddHydration?: () => void;
 }
 
 export const CaregiverDashboard: React.FC<CaregiverDashboardProps> = ({
   state,
+  activeTool = null,
   onLogMedication,
-  onAddHydration,
 }) => {
-  const { patient, caregiver, medications, appointments, activity_timeline } = state;
+  const { patient, medications, appointments } = state;
 
-  // Status Badge Config
-  const statusConfig: Record<
-    PatientStatus,
-    { label: string; bg: string; text: string; border: string; icon: React.ReactNode }
-  > = {
-    HEALTHY: {
-      label: 'HEALTHY • ALL DOSES ON TRACK',
-      bg: 'bg-emerald-50 dark:bg-emerald-950/80',
-      text: 'text-emerald-700 dark:text-emerald-300',
-      border: 'border-emerald-300 dark:border-emerald-500/60',
-      icon: <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />,
-    },
-    WARNING: {
-      label: 'WARNING • 1 DOSE OVERDUE',
-      bg: 'bg-amber-50 dark:bg-amber-950/80',
-      text: 'text-amber-800 dark:text-amber-300',
-      border: 'border-amber-300 dark:border-amber-500/60',
-      icon: <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-pulse" />,
-    },
-    CRITICAL: {
-      label: 'CRITICAL • WELLNESS ESCALATION',
-      bg: 'bg-rose-50 dark:bg-rose-950/90',
-      text: 'text-rose-800 dark:text-rose-200',
-      border: 'border-rose-300 dark:border-rose-500/80',
-      icon: <AlertOctagon className="w-4 h-4 text-rose-600 dark:text-rose-400 animate-bounce" />,
-    },
-  };
+  // Find morning & afternoon meds
+  const morningMed = medications.find((m) => m.scheduled_time.includes('08:00') || m.id === 'med_01') || medications[0];
+  const afternoonMed = medications.find((m) => m.scheduled_time.includes('02:00') || m.id === 'med_02') || medications[1];
 
-  const currentStatus = statusConfig[patient.status] || statusConfig.HEALTHY;
+  const isMorningDone = morningMed?.status === 'TAKEN';
+  const isAfternoonDone = afternoonMed?.status === 'TAKEN';
 
-  // SVG Radial Adherence Calculation (Supports both adherence_rate and adherence_Rate)
-  const adherenceRate = patient.adherence_rate ?? patient.adherence_Rate ?? 50;
-  const radius = 34;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (adherenceRate / 100) * circumference;
+  // Reactive spotlight rings based on active MCP tool
+  const isMedicationActive = activeTool === 'log_medication_taken';
+  const isScheduleActive = activeTool === 'get_today_schedule' || activeTool === 'add_appointment';
+  const isAlertActive = activeTool === 'check_in_status' || activeTool === 'notify_caregiver';
 
   return (
-    <div className="flex flex-col gap-4 text-slate-800 dark:text-slate-200 transition-colors duration-400">
-      {/* Caregiver Bridge Header Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-white/80 dark:bg-slate-900/80 border border-slate-200/90 dark:border-slate-800 rounded-2xl backdrop-blur-md shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md shadow-cyan-600/20 text-xs">
-            MV
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-wide">
-                Maya Vance&apos;s Remote Caregiver Hub
-              </h2>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-950/80 border border-cyan-300 dark:border-cyan-800 text-cyan-800 dark:text-cyan-300">
-                Synchronized &lt;10ms
-              </span>
-            </div>
-            <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
-              <span className="flex items-center gap-1">
-                <MapPin className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                {caregiver.location}
-              </span>
-              <span className="flex items-center gap-1">
-                <Phone className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                {caregiver.notification_status}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="text-right">
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">Patient Location</div>
-          <div className="text-xs font-semibold text-slate-900 dark:text-slate-200">{patient.location}</div>
-        </div>
-      </div>
-
-      {/* Patient Hero Card with Radial Adherence & Vitals */}
-      <div className="relative overflow-hidden p-5 rounded-2xl bg-white/90 dark:bg-[#0e172a]/90 border border-slate-200/90 dark:border-slate-700/60 shadow-xl backdrop-blur-lg">
-        {/* Glow ambient background element */}
-        <div className="absolute top-0 right-0 w-64 h-32 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                {patient.name}, <span className="text-slate-500 dark:text-slate-400 font-normal">Age {patient.age}</span>
-              </h3>
-              <div
-                className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${currentStatus.bg} ${currentStatus.text} ${currentStatus.border}`}
-              >
-                {currentStatus.icon}
-                <span>{currentStatus.label}</span>
-              </div>
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md">
-              {patient.condition_summary}
-            </p>
+    <div className="flex w-full h-full text-slate-800 dark:text-slate-100 select-none">
+      {/* 1. Slim Vertical Navigation Rail (Far Left) */}
+      <aside className="w-14 sm:w-16 flex flex-col items-center justify-between py-6 px-1.5 border-r border-white/60 dark:border-slate-800/80 shrink-0">
+        {/* Top Sphere / Brand Icon */}
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#E8DEC8] via-[#F5EFE0] to-[#FFFFFF] shadow-[inset_0_1px_2px_rgba(255,255,255,1),0_4px_8px_rgba(100,80,50,0.12)] border border-white/90 flex items-center justify-center">
+            <div className="w-3.5 h-3.5 rounded-full border border-amber-800/20 bg-amber-600/10" />
           </div>
 
-          {/* Radial Adherence Gauge */}
-          <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-2xl shrink-0 shadow-sm">
-            <div className="relative w-16 h-16 flex items-center justify-center">
-              <svg className="w-16 h-16 -rotate-90 transform" viewBox="0 0 80 80">
-                <circle
-                  cx="40"
-                  cy="40"
-                  r={radius}
-                  className="stroke-slate-200 dark:stroke-slate-800"
-                  strokeWidth="7"
-                  fill="transparent"
-                />
-                <circle
-                  cx="40"
-                  cy="40"
-                  r={radius}
-                  className={`transition-all duration-700 ease-out ${
-                    adherenceRate >= 75
-                      ? 'stroke-emerald-500'
-                      : adherenceRate >= 50
-                      ? 'stroke-amber-500'
-                      : 'stroke-rose-500'
-                  }`}
-                  strokeWidth="7"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={strokeDashoffset}
-                  strokeLinecap="round"
-                  fill="transparent"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-sm font-extrabold text-slate-900 dark:text-white leading-none">
-                  {adherenceRate}%
-                </span>
-                <span className="text-[8px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-                  Adherence
-                </span>
-              </div>
-            </div>
-            <div className="text-xs">
-              <div className="font-semibold text-slate-900 dark:text-slate-200">Daily Goal</div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                {medications.filter((m) => m.status === 'TAKEN').length} of {medications.length} Doses Taken
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Real-time Vitals Metric Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3.5">
-          {/* Heart Rate */}
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 shadow-sm">
-            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-[11px] mb-1">
-              <span className="flex items-center gap-1">
-                <Heart
-                  className={`w-3.5 h-3.5 ${
-                    patient.status === 'CRITICAL'
-                      ? 'text-rose-500 animate-ping'
-                      : 'text-rose-500 dark:text-rose-400 animate-pulse'
-                  }`}
-                />
-                Heart Rate
-              </span>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">Normal</span>
-            </div>
-            <div className="text-base font-extrabold text-slate-900 dark:text-white">
-              {patient.vitals.heart_rate} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">BPM</span>
-            </div>
-          </div>
-
-          {/* Blood Pressure */}
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 shadow-sm">
-            <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-[11px] mb-1">
-              <span className="flex items-center gap-1">
-                <Activity className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                Blood Pressure
-              </span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">Resting</span>
-            </div>
-            <div className="text-base font-extrabold text-slate-900 dark:text-white">
-              {patient.vitals.blood_pressure} <span className="text-xs font-normal text-slate-500 dark:text-slate-400">mmHg</span>
-            </div>
-          </div>
-
-          {/* Hydration Tracker with +1 Button */}
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 flex items-center justify-between shadow-sm">
-            <div>
-              <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400 text-[11px] mb-1">
-                <Droplets className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                Hydration
-              </div>
-              <div className="text-base font-extrabold text-slate-900 dark:text-white">
-                {patient.vitals.hydration_glasses}
-                <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
-                  /{patient.vitals.hydration_goal} glasses
-                </span>
-              </div>
-            </div>
+          {/* Navigation Icon Stack */}
+          <nav className="flex flex-col items-center gap-3.5">
+            {/* Home (Active 3D Pill) */}
             <button
-              onClick={onAddHydration}
-              className="p-1.5 rounded-lg bg-sky-100 hover:bg-sky-200 dark:bg-sky-950 dark:hover:bg-sky-900 border border-sky-300 dark:border-sky-500/40 text-sky-700 dark:text-sky-300 transition-colors shadow-sm"
-              title="Add 1 glass of water"
+              className="w-10 h-10 rounded-2xl bg-white/95 dark:bg-slate-800 shadow-[0_4px_12px_rgba(0,0,0,0.06),inset_0_1.5px_0_rgba(255,255,255,1)] border border-white/90 dark:border-slate-700 flex items-center justify-center text-amber-700 dark:text-amber-400 transition-transform active:scale-95"
+              title="Dashboard Home"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Home className="w-4 h-4 fill-amber-700/20" />
+            </button>
+
+            {/* Calendar */}
+            <button
+              className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 transition-all flex items-center justify-center"
+              title="Schedule"
+            >
+              <Calendar className="w-4 h-4" />
+            </button>
+
+            {/* Vitals */}
+            <button
+              className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 transition-all flex items-center justify-center"
+              title="Health Vitals"
+            >
+              <Activity className="w-4 h-4" />
+            </button>
+
+            {/* Alerts */}
+            <button
+              className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 transition-all flex items-center justify-center relative"
+              title="Alerts"
+            >
+              <Bell className="w-4 h-4" />
+              {patient.status !== 'HEALTHY' && (
+                <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-1.5 right-1.5 animate-ping" />
+              )}
+            </button>
+
+            {/* Settings */}
+            <button
+              className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 transition-all flex items-center justify-center"
+              title="Configuration"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </nav>
+        </div>
+
+        {/* Bottom Gear / System */}
+        <div className="text-slate-400 hover:text-slate-600 transition-colors p-1">
+          <Settings className="w-4 h-4" />
+        </div>
+      </aside>
+
+      {/* 2. Main Caregiver Dashboard Body */}
+      <div className="flex-1 flex flex-col gap-4 p-5 sm:p-6 overflow-y-auto">
+        {/* Header: Title + Connected Pill + Patient Profile */}
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+              Caregiver Dashboard
+            </h2>
+            <div className="flex items-center gap-2 mt-1">
+              {/* Patient Avatar (Elderly portrait badge) */}
+              <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-amber-200 to-rose-200 border border-white shadow-sm flex items-center justify-center text-xs overflow-hidden shrink-0">
+                👵🏻
+              </div>
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Patient: <span className="text-slate-900 dark:text-white font-bold">{patient.name || 'Evelyn Carter'}</span>{' '}
+                <span className="text-slate-500 font-normal">(Age {patient.age || 82})</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Green Connected Status Pill */}
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E6F9F0] dark:bg-emerald-950/80 border border-[#A7F3D0] dark:border-emerald-600/50 text-[#059669] dark:text-emerald-300 text-xs font-bold shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
+            <span>Connected</span>
+          </div>
+        </header>
+
+        {/* Card 1: Medication Logs (Large soft frosted bento card) */}
+        <section
+          className={`glass-card rounded-3xl p-4 sm:p-5 relative transition-all duration-300 ${
+            isMedicationActive ? 'mcp-ring-medication' : ''
+          }`}
+        >
+          {/* Card Subheader */}
+          <div className="flex items-center justify-between mb-3.5">
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+              Medication Logs
+            </h3>
+            <button
+              onClick={() => onLogMedication?.(afternoonMed?.id || 'med_02')}
+              className="tactile-pill px-3 py-1 rounded-full text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5"
+            >
+              <SlidersHorizontal className="w-3 h-3 text-slate-500" />
+              <span>Connection</span>
             </button>
           </div>
 
-          {/* Last Check-in & Mood */}
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 shadow-sm">
-            <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400 text-[11px] mb-1">
-              <Clock className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-              Last Check-In
-            </div>
-            <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-              {patient.last_check_in}
-            </div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-              Mood: <span className="text-cyan-600 dark:text-cyan-300 font-medium">{patient.vitals.mood}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Medication Adherence Matrix */}
-      <div>
-        <div className="flex items-center justify-between mb-2 px-0.5">
-          <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-            <span>Medication Adherence Matrix</span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-              4 Formulations
-            </span>
-          </h4>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">
-            Click &ldquo;Log Dose via MCP&rdquo; to trigger tool directly
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {medications.map((med) => {
-            const isTaken = med.status === 'TAKEN';
-            const isOverdue = med.status === 'OVERDUE';
-
-            return (
-              <div
-                key={med.id}
-                className={`p-3.5 rounded-xl border transition-all duration-200 flex flex-col justify-between ${
-                  isOverdue
-                    ? 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-300 dark:border-rose-500/60 shadow-lg shadow-rose-950/20'
-                    : isTaken
-                    ? 'bg-white/80 dark:bg-slate-900/60 border-emerald-300 dark:border-emerald-500/40 shadow-sm'
-                    : 'bg-white/80 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 shadow-sm'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm"
-                        style={{ backgroundColor: med.pill_color }}
-                      />
-                      <div>
-                        <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <span>{med.name}</span>
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                            {med.dosage}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">{med.purpose}</div>
-                      </div>
-                    </div>
-
-                    <div
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 ${
-                        isTaken
-                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                          : isOverdue
-                          ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                      }`}
-                    >
-                      {isTaken ? (
-                        <>
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                          <span>TAKEN ({med.taken_at})</span>
-                        </>
-                      ) : isOverdue ? (
-                        <>
-                          <AlertTriangle className="w-3 h-3 text-rose-600 dark:text-rose-400" />
-                          <span>OVERDUE (2:00 PM)</span>
-                        </>
-                      ) : (
-                        <>
-                          <Clock className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-                          <span>UPCOMING ({med.scheduled_time})</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight mb-3">
-                    {med.instructions}
-                  </p>
-                </div>
-
-                {!isTaken && (
-                  <button
-                    onClick={() => onLogMedication(med.id)}
-                    className="w-full py-1.5 px-3 rounded-lg bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/70 dark:hover:bg-cyan-900/90 border border-cyan-300 dark:border-cyan-500/50 hover:border-cyan-400 text-cyan-800 dark:text-cyan-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                  >
-                    <Zap className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                    <span>Log Dose via MCP</span>
-                  </button>
-                )}
+          {/* Card Content Row */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            {/* Left: 3D Tactile Pill Tile */}
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-white via-[#FAF8F5] to-[#EAE6DF] shadow-[0_8px_20px_-4px_rgba(60,50,40,0.1),inset_0_2px_4px_rgba(255,255,255,1)] border border-white/95 flex items-center justify-center shrink-0 relative overflow-hidden">
+                <Tactile3DPillCanvas className="w-18 h-18" />
               </div>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Appointments & Activity Timeline Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-        {/* Appointments Section */}
-        <div className="p-3.5 bg-white/80 dark:bg-slate-900/70 border border-slate-200/90 dark:border-slate-800 rounded-xl shadow-sm">
-          <div className="flex items-center justify-between mb-2.5 pb-1.5 border-b border-slate-200 dark:border-slate-800">
-            <h5 className="text-xs font-bold text-slate-800 dark:text-slate-300 flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              <span>Upcoming Appointments</span>
-            </h5>
-            <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-mono">Auto-Sync</span>
-          </div>
-
-          <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-            {appointments.map((apt) => (
-              <div
-                key={apt.id}
-                className="p-2 rounded-lg bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-xs"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="font-bold text-slate-800 dark:text-slate-200 truncate">{apt.title}</div>
-                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono bg-emerald-100 dark:bg-emerald-950/70 px-1.5 py-0.2 rounded border border-emerald-300 dark:border-emerald-800">
-                    {apt.status}
+              {/* Center: Morning & Afternoon Med Status Checklist */}
+              <div className="space-y-2 text-xs">
+                {/* Morning Meds */}
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-slate-200/80 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 shrink-0">
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  </div>
+                  <span className="font-medium text-slate-700 dark:text-slate-200">
+                    Morning Meds — 8:00 AM
+                  </span>
+                  <span className="font-bold text-[#10B981] dark:text-emerald-400">
+                    [Done]
                   </span>
                 </div>
-                <div className="text-[11px] text-cyan-700 dark:text-cyan-300 mb-0.5">
-                  {apt.date} • {apt.time}
+
+                {/* Afternoon Meds */}
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-slate-200/80 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 shrink-0">
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  </div>
+                  <span className="font-medium text-slate-700 dark:text-slate-200">
+                    Afternoon Meds — 2:00 PM
+                  </span>
+                  <span
+                    className={`font-bold ${
+                      isAfternoonDone
+                        ? 'text-[#10B981] dark:text-emerald-400'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    {isAfternoonDone ? '[Done]' : '[Scheduled]'}
+                  </span>
                 </div>
-                <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{apt.location}</div>
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        {/* Activity Timeline Audit Trail */}
-        <div className="p-3.5 bg-white/80 dark:bg-slate-900/70 border border-slate-200/90 dark:border-slate-800 rounded-xl shadow-sm">
-          <div className="flex items-center justify-between mb-2.5 pb-1.5 border-b border-slate-200 dark:border-slate-800">
-            <h5 className="text-xs font-bold text-slate-800 dark:text-slate-300 flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>Activity &amp; MCP Audit Trail</span>
-            </h5>
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">Live Feed</span>
-          </div>
-
-          <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-            {activity_timeline.map((event) => (
-              <div
-                key={event.id}
-                className="text-xs p-1.5 rounded-lg bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/80 flex items-start gap-2"
+            {/* Right: Tactile Action Buttons */}
+            <div className="flex items-center gap-2.5 self-end sm:self-center">
+              <button
+                onClick={() => onLogMedication?.(afternoonMed?.id || 'med_02')}
+                className="tactile-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900"
               >
-                <span className="text-[9px] font-mono text-cyan-700 dark:text-cyan-400 shrink-0 mt-0.5 bg-cyan-100 dark:bg-cyan-950/60 px-1 py-0.2 rounded">
-                  {event.timestamp}
-                </span>
-                <div className="min-w-0">
-                  <div className="text-[11px] text-slate-800 dark:text-slate-300 font-medium truncate">
-                    {event.summary}
+                [ Log Info ]
+              </button>
+              <button
+                onClick={() => onLogMedication?.(afternoonMed?.id || 'med_02')}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#E6F9F0] hover:bg-[#D1F5E4] dark:bg-emerald-950/80 border border-[#A7F3D0] dark:border-emerald-600/50 text-[#059669] dark:text-emerald-300 transition-all shadow-sm active:scale-95"
+              >
+                [ Connected ]
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Bento Grid Row 2: Check-In Status & Daily Schedule */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Bento Card A: Check-In Status with 3D House & LED meter */}
+          <section
+            className={`glass-card rounded-3xl p-4 sm:p-5 flex flex-col justify-between transition-all duration-300 ${
+              isAlertActive ? 'mcp-ring-alert' : ''
+            }`}
+          >
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5">
+                Check-In Status
+              </h3>
+
+              {/* 3D House Icon + Safe & Active Text */}
+              <div className="flex items-center gap-3.5 mb-3">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-white to-[#F2EFE9] shadow-[0_6px_14px_-2px_rgba(60,50,40,0.08),inset_0_1.5px_0_rgba(255,255,255,1)] border border-white flex items-center justify-center shrink-0 overflow-hidden">
+                  <Tactile3DHouseCanvas className="w-14 h-14" />
+                </div>
+                <div>
+                  <div className="font-extrabold text-[#10B981] dark:text-emerald-400 text-sm tracking-tight flex items-center gap-1.5">
+                    <span>Safe &amp; Active</span>
                   </div>
-                  <div className="text-[9px] text-slate-500 font-mono truncate">
-                    {event.actor}
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Living Room sensor activity normal
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+
+            {/* Vitals: Heart Rate + Glowing LED Segmented Meter */}
+            <div className="mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 mb-1.5 font-medium">
+                <span className="flex items-center gap-1">
+                  <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
+                  Vitals: Heart Rate
+                </span>
+                <span className="font-bold text-slate-800 dark:text-white font-mono">
+                  {patient.vitals.heart_rate || 74} bpm
+                </span>
+              </div>
+
+              {/* Glowing Segmented LED Bar (~14 pill segments) */}
+              <div className="flex items-center gap-1 h-3.5 px-2 py-0.5 rounded-full bg-slate-200/50 dark:bg-slate-900 border border-slate-300/40 dark:border-slate-800">
+                {[...Array(14)].map((_, i) => (
+                  <span
+                    key={i}
+                    className={`flex-1 h-2 rounded-full transition-all duration-300 ${
+                      i < 9
+                        ? 'bg-[#10B981] shadow-[0_0_6px_rgba(16,185,129,0.7)]'
+                        : 'bg-slate-300/70 dark:bg-slate-700'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* Bento Card B: Daily Schedule with 3D Calendar nodes and connector trail */}
+          <section
+            className={`glass-card rounded-3xl p-4 sm:p-5 flex flex-col justify-between transition-all duration-300 ${
+              isScheduleActive ? 'mcp-ring-schedule' : ''
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-2.5">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  Daily Schedule
+                </h3>
+                {isScheduleActive && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-700 dark:text-indigo-300 font-bold animate-pulse">
+                    Live Sync
+                  </span>
+                )}
+              </div>
+
+              {/* Visual Schedule Trail */}
+              <div className="relative pl-1 py-1 space-y-3.5 text-xs">
+                {/* Appointment 1 */}
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-rose-500 to-rose-600 shadow-sm flex items-center justify-center text-white shrink-0">
+                    <Calendar className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="font-medium text-slate-800 dark:text-slate-200">
+                    <span className="font-bold">10:30 AM</span> - Doctor Appointment
+                  </div>
+                </div>
+
+                {/* Dotted Connector Trail */}
+                <div className="ml-3.5 w-0.5 h-3 border-l-2 border-dotted border-slate-300 dark:border-slate-700" />
+
+                {/* Appointment 2 */}
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-rose-500 to-rose-600 shadow-sm flex items-center justify-center text-white shrink-0">
+                    <Calendar className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="font-medium text-slate-800 dark:text-slate-200">
+                    <span className="font-bold">4:00 PM</span> - Daily Walk
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub-note */}
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between">
+              <span>Synced with Amazon Alexa Schedule</span>
+              <span className="font-mono text-[10px]">MCP 2025-11-25</span>
+            </div>
+          </section>
         </div>
+
+        {/* Bento Card 3: Family Alerts (Warm Peach / Amber Card) */}
+        <section
+          className={`rounded-3xl p-4 bg-gradient-to-br from-[#FEF7EB] via-[#FDF3E2] to-[#FCECD0] border border-[#FDE68A] text-[#92400E] shadow-[0_10px_25px_-5px_rgba(217,119,6,0.08)] flex items-center justify-between gap-4 transition-all duration-300 ${
+            isAlertActive ? 'ring-2 ring-amber-500 shadow-amber-500/20' : ''
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-[#FEF3C7] border border-[#FCD34D] flex items-center justify-center text-amber-600 shadow-sm shrink-0 mt-0.5">
+              <AlertTriangle className="w-4 h-4 fill-amber-500/30" />
+            </div>
+            <div>
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-amber-950 mb-0.5">
+                Family Alerts
+              </h4>
+              <p className="text-xs font-bold text-amber-900">
+                Family Alert: Sarah notified
+              </p>
+              <p className="text-[11px] text-amber-800/80">
+                Front Door movement (12:30 PM)
+              </p>
+            </div>
+          </div>
+
+          <div className="text-right shrink-0">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-900 font-bold">
+              Proactive Ping
+            </span>
+          </div>
+        </section>
       </div>
     </div>
   );
 };
+
+export default CaregiverDashboard;

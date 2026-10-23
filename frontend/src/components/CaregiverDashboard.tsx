@@ -90,11 +90,11 @@ export const CaregiverDashboard: React.FC<CaregiverDashboardProps> = ({
             <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
               <span className="flex items-center gap-1">
                 <MapPin className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                Seattle, WA (680 miles away)
+                {caregiver.location}
               </span>
               <span className="flex items-center gap-1">
                 <Phone className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                Push &amp; SMS Live
+                {caregiver.notification_status}
               </span>
             </div>
           </div>

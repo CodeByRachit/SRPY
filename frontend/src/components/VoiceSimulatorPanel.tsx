@@ -20,7 +20,7 @@ interface VoiceSimulatorPanelProps {
   activeTool: string | null;
   chatMessages: ChatMessage[];
   onSendMessage: (msg: string) => void;
-  onScenarioTrigger: (scenarioKey: 'LOG_ELIQUIS' | 'CHECK_SCHEDULE' | 'ESCALATE_CHECKIN' | 'BOOK_APPOINTMENT') => void;
+  onScenarioTrigger: (scenarioKey: 'LOG_ELIQUIS' | 'GET_SCHEDULE' | 'MISSED_CHECKIN_ESCALATION' | 'ADD_APPOINTMENT') => void;
   onSelectToolLog?: (toolName: string) => void;
 }
 
@@ -163,7 +163,7 @@ export const VoiceSimulatorPanel: React.FC<VoiceSimulatorPanelProps> = ({
 
           {/* Scenario 2: Today's Schedule */}
           <button
-            onClick={() => onScenarioTrigger('CHECK_SCHEDULE')}
+            onClick={() => onScenarioTrigger('GET_SCHEDULE')}
             className="flex items-center gap-2 p-2 rounded-xl text-left text-xs bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:hover:bg-cyan-900/60 border border-cyan-200 dark:border-cyan-500/40 text-cyan-800 dark:text-cyan-200 transition-all group shadow-sm"
           >
             <div className="p-1.5 rounded-lg bg-cyan-100 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 group-hover:scale-110 transition-transform">
@@ -179,7 +179,7 @@ export const VoiceSimulatorPanel: React.FC<VoiceSimulatorPanelProps> = ({
 
           {/* Scenario 3: Check-in Escalation */}
           <button
-            onClick={() => onScenarioTrigger('ESCALATE_CHECKIN')}
+            onClick={() => onScenarioTrigger('MISSED_CHECKIN_ESCALATION')}
             className="flex items-center gap-2 p-2 rounded-xl text-left text-xs bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-500/40 text-amber-800 dark:text-amber-200 transition-all group shadow-sm"
           >
             <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform">
@@ -195,7 +195,7 @@ export const VoiceSimulatorPanel: React.FC<VoiceSimulatorPanelProps> = ({
 
           {/* Scenario 4: Book Doctor Appointment */}
           <button
-            onClick={() => onScenarioTrigger('BOOK_APPOINTMENT')}
+            onClick={() => onScenarioTrigger('ADD_APPOINTMENT')}
             className="flex items-center gap-2 p-2 rounded-xl text-left text-xs bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-500/40 text-indigo-800 dark:text-indigo-200 transition-all group shadow-sm"
           >
             <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform">

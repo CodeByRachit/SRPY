@@ -110,50 +110,26 @@ export const App: React.FC = () => {
   };
 
   const handleScenarioTrigger = (
-    key: 'LOG_ELIQUIS' | 'CHECK_SCHEDULE' | 'ESCALATE_CHECKIN' | 'BOOK_APPOINTMENT'
+    key: 'LOG_ELIQUIS' | 'GET_SCHEDULE' | 'MISSED_CHECKIN_ESCALATION' | 'ADD_APPOINTMENT'
   ) => {
     switch (key) {
       case 'LOG_ELIQUIS':
-        careService.handleAgentUtterance('Alexa, I just took my afternoon Eliquis pill with a glass of water');
+        careService.executeScenario('LOG_ELIQUIS', 'Alexa, I just took my afternoon Eliquis pill with a glass of water');
         break;
-      case 'CHECK_SCHEDULE':
-        careService.handleAgentUtterance("Alexa, what's my medication and doctor schedule today?");
+      case 'GET_SCHEDULE':
+        careService.executeScenario('GET_SCHEDULE', "Alexa, what's my care schedule for today?");
         break;
-      case 'ESCALATE_CHECKIN':
-        careService.handleAgentUtterance("Alexa, Eleanor is having chest tightness and hasn't answered!");
+      case 'MISSED_CHECKIN_ESCALATION':
+        careService.executeScenario('MISSED_CHECKIN_ESCALATION', "Alexa, Eleanor did not respond to the living room check-in chime!");
         break;
-      case 'BOOK_APPOINTMENT':
-        careService.handleAgentUtterance('Alexa, schedule an eye exam with Dr. Priya Patel for tomorrow at 2:00 PM');
+      case 'ADD_APPOINTMENT':
+        careService.executeScenario('ADD_APPOINTMENT', 'Alexa, schedule an eye exam with Dr. Priya Patel for tomorrow at 2:00 PM');
         break;
     }
   };
 
   const handleDirectMcpInvoke = async (toolName: string, args: Record<string, unknown>) => {
-    if (toolName === 'log_medication_taken') {
-      await careService.logMedicationTaken(
-        (args.medication_id as string) || 'med_2',
-        args.notes as string,
-        'MCP Inspector Direct Test'
-      );
-    } else if (toolName === 'get_today_schedule') {
-      await careService.getTodaySchedule();
-    } else if (toolName === 'check_in_status') {
-      await careService.checkInStatus((args.distress_level as any) || 'HIGH', args.note as string);
-    } else if (toolName === 'add_appointment') {
-      await careService.addAppointment(
-        (args.title as string) || 'Doctor Follow-up',
-        (args.specialty as string) || 'General',
-        (args.date as string) || 'Tomorrow',
-        (args.time as string) || '2:00 PM',
-        (args.location as string) || 'Clinic'
-      );
-    } else if (toolName === 'notify_caregiver') {
-      await careService.notifyCaregiver(
-        (args.channel as string) || 'PUSH_AND_SMS',
-        (args.urgency as any) || 'HIGH',
-        (args.message as string) || 'Direct MCP trigger test'
-      );
-    }
+    await careService.directMcpInvoke(toolName, args);
   };
 
   const handleResetDemo = () => {
@@ -197,9 +173,9 @@ export const App: React.FC = () => {
     autoDemoTimerRef.current = setTimeout(() => {
       setAutoDemoStep(2);
       setAutoDemoStory(
-        'Scene 2/4: Eleanor speaks: "Alexa, I just took my afternoon Eliquis pill". MCP log_medication_taken executes. 3D capsule turns green, adherence jumps to 75%, and Maya receives an instant push notification in Seattle!'
+        'Scene 2/4: Eleanor speaks: "Alexa, I just took my afternoon Eliquis pill". MCP log_medication_taken executes on backend. 3D capsule turns green, adherence jumps to 75%, and Maya receives an instant push notification!'
       );
-      careService.handleAgentUtterance('Alexa, I just took my afternoon Eliquis pill with a glass of water');
+      careService.executeScenario('LOG_ELIQUIS', 'Alexa, I just took my afternoon Eliquis pill with a glass of water');
 
       // Step 3 (at 20s): Book Doctor Appointment
       autoDemoTimerRef.current = setTimeout(() => {
@@ -207,7 +183,8 @@ export const App: React.FC = () => {
         setAutoDemoStory(
           'Scene 3/4: Voice Care Coordination: Eleanor asks Alexa+ to schedule a retinal exam with Dr. Priya Patel. MCP add_appointment adds it to both her schedule and Maya’s synced dashboard.'
         );
-        careService.handleAgentUtterance(
+        careService.executeScenario(
+          'ADD_APPOINTMENT',
           'Alexa, could you schedule an eye exam with Dr. Priya Patel for tomorrow at 2:00 PM?'
         );
 
@@ -217,14 +194,15 @@ export const App: React.FC = () => {
           setAutoDemoStory(
             'Scene 4/4: Emergency Guardian Escalate: Eleanor is unresponsive to proactive wellness prompt. MCP check_in_status sets status to CRITICAL, triggers alert sirens, and alerts Maya immediately.'
           );
-          careService.handleAgentUtterance(
+          careService.executeScenario(
+            'MISSED_CHECKIN_ESCALATION',
             'Alexa, Eleanor has not responded to the proactive living room check-in prompt!'
           );
 
           // Step 5 (at 56s): Safe Resolution
           autoDemoTimerRef.current = setTimeout(() => {
             setAutoDemoStory(
-              'Resolution: Eleanor checks in verbally ("I\'m okay, just stepped outside for fresh air"). MCP resets status back to Healthy, reassuring Maya 680 miles away.'
+              'Resolution: Eleanor checks in verbally ("I\'m okay, just stepped outside for fresh air"). Status resets back to Healthy, reassuring Maya in San Francisco.'
             );
             careService.handleAgentUtterance("Alexa, I'm okay now, just stepped outside for fresh air");
 
